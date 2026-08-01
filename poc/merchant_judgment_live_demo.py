@@ -8,13 +8,18 @@ search_merchant 웹 검색 도구는 이번 데모에서도 mock을 유지한다
 
 import json
 import os
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.db import insert_transaction  # noqa: E402
 
 MAX_RETRIES = 2
 SIMILARITY_THRESHOLD = 0.75
@@ -136,6 +141,17 @@ def run_merchant_judgment_loop(transaction: Transaction, tool: MockSearchTool) -
     return Decision(decision="escalate", reason=f"재시도 {MAX_RETRIES}회 초과")
 
 
+def _persist(transaction: Transaction, result: Decision) -> None:
+    insert_transaction(
+        merchant=transaction.merchant,
+        amount=transaction.amount,
+        category=result.category,
+        decision=result.decision,
+        confidence=result.confidence,
+        reason=result.reason,
+    )
+
+
 def example_delivery_app_merchant() -> None:
     """배달앱 대행 결제형 가맹점 — 검색 1회 후 확정되는 경로 (실제 Gemini 호출)."""
     print("=== 예시 1: 배달앱 결제형 가맹점 ===")
@@ -143,6 +159,7 @@ def example_delivery_app_merchant() -> None:
     tool = MockSearchTool({"엔제리너스": "엔제리너스 - 커피전문점 프랜차이즈"})
     result = run_merchant_judgment_loop(transaction, tool)
     print(f"[결과] {result}\n")
+    _persist(transaction, result)
 
 
 def example_ambiguous_merchant() -> None:
@@ -152,6 +169,7 @@ def example_ambiguous_merchant() -> None:
     tool = MockSearchTool({})
     result = run_merchant_judgment_loop(transaction, tool)
     print(f"[결과] {result}\n")
+    _persist(transaction, result)
 
 
 if __name__ == "__main__":
