@@ -2,72 +2,289 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>Spending Copilot — 거래 조회 (toy)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>체크카드 소비 코파일럿</title>
 <style>
-  body {
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    max-width: 900px;
-    margin: 40px auto;
-    padding: 0 16px;
-    color: #1a1a1a;
-    background: #fafafa;
+  :root {
+    --bg: #f7f6f3;
+    --surface: #ffffff;
+    --border: #e5e2da;
+    --text: #262420;
+    --text-muted: #726d63;
+    --accent: #2f6f5e;
+    --accent-soft: #e4efec;
+    --confirm: #2f6f5e;
+    --escalate: #b4632c;
+    --escalate-soft: #f6ebe1;
+    --shadow: 0 1px 2px rgba(30, 27, 20, 0.04), 0 8px 24px rgba(30, 27, 20, 0.04);
   }
-  h1 { font-size: 1.3rem; }
-  p.sub { color: #666; margin-top: -8px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e0e0e0; font-size: 0.92rem; }
-  th { color: #555; font-weight: 600; }
-  .decision-confirm { color: #1a7f37; font-weight: 600; }
-  .decision-escalate { color: #b3542a; font-weight: 600; }
-  #empty { color: #888; margin-top: 24px; }
-  #refresh { margin-top: 12px; padding: 6px 12px; cursor: pointer; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171613;
+      --surface: #201f1b;
+      --border: #322f29;
+      --text: #ece9e2;
+      --text-muted: #9a9488;
+      --accent: #6fbfa4;
+      --accent-soft: #223330;
+      --confirm: #6fbfa4;
+      --escalate: #e0a06a;
+      --escalate-soft: #332821;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.5;
+  }
+  header h1 { font-size: 1.4rem; margin: 0 0 2px; }
+  header p { color: var(--text-muted); margin: 0 0 28px; font-size: 0.9rem; }
+
+  section { margin-bottom: 32px; }
+  section h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+
+  /* --- chat --- */
+  #chat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  #chat-log {
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  #chat-log:empty::before {
+    content: "예: \"이번 주 카페 얼마 썼어?\", \"이번 달 총 얼마 썼어?\"";
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+  .msg { max-width: 82%; padding: 9px 13px; border-radius: 12px; font-size: 0.92rem; white-space: pre-wrap; }
+  .msg-user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 3px;
+  }
+  .msg-assistant {
+    align-self: flex-start;
+    background: var(--accent-soft);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+  }
+  .msg-error {
+    align-self: flex-start;
+    background: var(--escalate-soft);
+    color: var(--escalate);
+    border-bottom-left-radius: 3px;
+  }
+  .msg-pending { opacity: 0.6; }
+
+  #chat-form {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+  #chat-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 0.92rem;
+    background: var(--bg);
+    color: var(--text);
+  }
+  #chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #chat-form button {
+    border: none;
+    border-radius: 8px;
+    padding: 0 16px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  #chat-form button:disabled { opacity: 0.5; cursor: default; }
+
+  /* --- transactions --- */
+  #tx-header { display: flex; justify-content: space-between; align-items: baseline; }
+  #refresh {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .tx-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .tx-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tx-row:last-child { border-bottom: none; }
+  .tx-merchant { font-weight: 600; font-size: 0.94rem; }
+  .tx-amount { font-weight: 600; font-size: 0.94rem; text-align: right; }
+  .tx-meta { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 0.76rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .badge-escalate { background: var(--escalate-soft); color: var(--escalate); }
+  .tx-reason { color: var(--text-muted); font-size: 0.8rem; }
+  .tx-time { color: var(--text-muted); font-size: 0.78rem; margin-left: auto; }
+  #empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
 </style>
 </head>
 <body>
-  <h1>가맹점 판단 결과 조회</h1>
-  <p class="sub">poc/merchant_judgment_live_demo.py 실행 결과가 SQLite에 저장되고, 여기서 API로 조회합니다.</p>
-  <button id="refresh">새로고침</button>
-  <table id="table" style="display:none">
-    <thead>
-      <tr><th>ID</th><th>가맹점</th><th>금액</th><th>카테고리</th><th>판정</th><th>확신도</th><th>이유</th><th>시각</th></tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-  <p id="empty">아직 저장된 거래가 없습니다. 데모 스크립트를 먼저 실행하세요.</p>
+  <header>
+    <h1>체크카드 소비 코파일럿</h1>
+    <p>캡처된 결제가 자동으로 분류되고, 소비에 대해 자연어로 물어볼 수 있어요.</p>
+  </header>
+
+  <section>
+    <h2>무엇이든 물어보세요</h2>
+    <div id="chat-card">
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" type="text" placeholder="예: 이번 주 카페 얼마 썼어?" autocomplete="off" />
+        <button type="submit" id="chat-submit">보내기</button>
+      </form>
+    </div>
+  </section>
+
+  <section>
+    <div id="tx-header">
+      <h2>최근 거래</h2>
+      <button id="refresh">새로고침</button>
+    </div>
+    <div class="tx-card" id="tx-card" style="display:none">
+      <div id="tx-list"></div>
+    </div>
+    <p id="empty">아직 저장된 거래가 없습니다.</p>
+  </section>
 
 <script>
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
 async function loadTransactions() {
   const res = await fetch("/transactions");
   const rows = await res.json();
-  const tbody = document.getElementById("tbody");
-  const table = document.getElementById("table");
+  const list = document.getElementById("tx-list");
+  const card = document.getElementById("tx-card");
   const empty = document.getElementById("empty");
-  tbody.innerHTML = "";
+  list.innerHTML = "";
 
   if (rows.length === 0) {
-    table.style.display = "none";
+    card.style.display = "none";
     empty.style.display = "block";
     return;
   }
   empty.style.display = "none";
-  table.style.display = "table";
+  card.style.display = "block";
 
   for (const row of rows) {
-    const tr = document.createElement("tr");
-    const decisionClass = row.decision === "confirm" ? "decision-confirm" : "decision-escalate";
-    tr.innerHTML = `
-      <td>${row.id}</td>
-      <td>${row.merchant}</td>
-      <td>${row.amount.toLocaleString()}원</td>
-      <td>${row.category ?? "-"}</td>
-      <td class="${decisionClass}">${row.decision}</td>
-      <td>${row.confidence ?? "-"}</td>
-      <td>${row.reason ?? "-"}</td>
-      <td>${row.created_at}</td>
+    const div = document.createElement("div");
+    div.className = "tx-row";
+    const isConfirm = row.decision === "confirm";
+    const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
+    const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
+    div.innerHTML = `
+      <div class="tx-merchant">${escapeHtml(row.merchant)}</div>
+      <div class="tx-amount">${row.amount.toLocaleString()}원</div>
+      <div class="tx-meta">
+        <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
+        <span class="tx-reason">${escapeHtml(row.reason ?? "")}</span>
+        <span class="tx-time">${escapeHtml(row.created_at)}</span>
+      </div>
     `;
-    tbody.appendChild(tr);
+    list.appendChild(div);
   }
 }
+
+function appendMessage(text, kind) {
+  const log = document.getElementById("chat-log");
+  const div = document.createElement("div");
+  div.className = `msg msg-${kind}`;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+document.getElementById("chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("chat-input");
+  const button = document.getElementById("chat-submit");
+  const question = input.value.trim();
+  if (!question) return;
+
+  appendMessage(question, "user");
+  input.value = "";
+  input.disabled = true;
+  button.disabled = true;
+  const pending = appendMessage("생각하는 중...", "assistant");
+  pending.classList.add("msg-pending");
+
+  try {
+    const res = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const data = await res.json();
+    pending.remove();
+    if (!res.ok) {
+      appendMessage(data.detail ?? "질문 처리에 실패했어요.", "error");
+    } else {
+      appendMessage(data.answer, "assistant");
+      loadTransactions();
+    }
+  } catch (err) {
+    pending.remove();
+    appendMessage("서버에 연결하지 못했어요.", "error");
+  } finally {
+    input.disabled = false;
+    button.disabled = false;
+    input.focus();
+  }
+});
 
 document.getElementById("refresh").addEventListener("click", loadTransactions);
 loadTransactions();

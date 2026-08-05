@@ -8,14 +8,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 MAX_RETRIES = 2
-SIMILARITY_THRESHOLD = 0.75
 
 
 @dataclass
 class Transaction:
     merchant: str
     amount: int
-    chroma_similarity: float  # 0~1, mocked 값
 
 
 @dataclass
@@ -59,11 +57,7 @@ def run_merchant_judgment_loop(
     tool: MockSearchTool,
 ) -> Decision:
     """3.4.1 가맹점 판단 루프. 에이전트 루프이므로 매 스텝 LLM이 종료/재검색을 스스로 결정한다."""
-    print(f"[입력] {transaction.merchant} / {transaction.amount}원 / Chroma 유사도 {transaction.chroma_similarity}")
-
-    if transaction.chroma_similarity >= SIMILARITY_THRESHOLD:
-        print("  -> 유사도 충분, 루프 진입 없이 즉시 확정")
-        return Decision(decision="confirm", category="(유사 거래 기반 확정)", confidence=transaction.chroma_similarity)
+    print(f"[입력] {transaction.merchant} / {transaction.amount}원 (0차 정확 매칭 미스)")
 
     for _ in range(MAX_RETRIES):
         decision = llm.decide()
@@ -88,7 +82,7 @@ def run_merchant_judgment_loop(
 def example_confirm_after_search() -> None:
     """docs 3.4.1의 예시: 검색 1회 후 확정되는 정상 경로."""
     print("=== 예시 1: 검색 후 확정 ===")
-    transaction = Transaction(merchant="쿠팡이츠*엔제리너스", amount=8900, chroma_similarity=0.42)
+    transaction = Transaction(merchant="쿠팡이츠*엔제리너스", amount=8900)
     llm = MockLLM([
         Decision(decision="search", search_query="쿠팡이츠 엔제리너스 업종", reason="배달앱 결제형이라 실제 업종 불명확"),
         Decision(decision="confirm", category="카페", confidence=0.88, reason="검색 결과로 커피전문점 확인"),
@@ -103,7 +97,7 @@ def example_confirm_after_search() -> None:
 def example_escalate_after_retry_limit() -> None:
     """재시도 한도를 넘겨도 확신이 서지 않아 리뷰 큐로 넘어가는 경로 (안전장치 검증)."""
     print("=== 예시 2: 재시도 한도 초과 -> 리뷰 큐 ===")
-    transaction = Transaction(merchant="(주)미상거래12345", amount=15000, chroma_similarity=0.10)
+    transaction = Transaction(merchant="(주)미상거래12345", amount=15000)
     llm = MockLLM([
         Decision(decision="search", search_query="(주)미상거래12345", reason="가맹점명이 사업자번호 형태라 단서 부족"),
         Decision(decision="search", search_query="미상거래 업종 조회", reason="1차 검색 결과로도 특정 불가"),

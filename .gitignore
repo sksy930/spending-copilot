@@ -5,3 +5,4 @@ venv/
 .env
 *.db
 chroma_db/
+data/*.csv
