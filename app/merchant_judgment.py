@@ -1,8 +1,12 @@
-"""가맹점 판단 에이전트 루프 (docs/project-overview.md 3.4.1).
+"""가맹점 판단 에이전트 루프 (docs/project-overview.md 3.4.1, 3.5 LLM 라우팅).
 
 0차 정확 매칭에서 걸러지지 않은 거래를 LLM이 스스로 웹 검색 여부를 결정하며
 판단한다. poc/merchant_judgment_live_demo.py와 웹훅 파이프라인(app/main.py)이
 이 모듈을 공유한다.
+
+판단(confirm/search/escalate)은 도구 호출이 필요 없는 저지연 분류 작업이라 Groq를
+쓰고, 실제 웹 검색만 Gemini의 Google Search grounding을 쓴다 (Groq엔 이 기능이
+없음) — docs 3.5가 원래 의도했던 라우팅에 가깝다.
 """
 
 import json
@@ -18,6 +22,7 @@ MAX_RETRIES = 2
 RATE_LIMIT_RETRY_ATTEMPTS = 3
 RATE_LIMIT_BACKOFF_SECONDS = 20
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-flash-latest")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
 
 SYSTEM_PROMPT = """너는 체크카드 거래의 가맹점 카테고리를 판단하는 에이전트다.
 매 스텝마다 아래 JSON 스키마로만 응답한다 (다른 설명 문장 없이 JSON 객체 하나만 출력):
@@ -126,10 +131,10 @@ def _parse_decision(raw_text: str) -> Decision:
 
 
 def call_llm(messages: list[dict]) -> Decision:
-    """Gemini 무료 티어의 분당 요청 제한(429)에 걸리면 잠깐 대기 후 재시도한다."""
+    """판단 전용 — Groq. 무료 티어 요청 제한(429)에 걸리면 잠깐 대기 후 재시도한다."""
     for attempt in range(1, RATE_LIMIT_RETRY_ATTEMPTS + 1):
         try:
-            response = litellm.completion(model=GEMINI_MODEL, messages=messages, temperature=0)
+            response = litellm.completion(model=GROQ_MODEL, messages=messages, temperature=0)
             return _parse_decision(response.choices[0].message.content)
         except RateLimitError:
             if attempt == RATE_LIMIT_RETRY_ATTEMPTS:

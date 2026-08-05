@@ -1,6 +1,6 @@
 # 체크카드 소비 자동 캡처 & 분석 에이전트
 
-> 실시간 배너 스크린샷 OCR 기반 캡처 파이프라인으로 개인 소비 데이터를 수집하고, 트리거별로 분리된 LangGraph 워크플로우가 분류·주간 브리핑을 수행하는 개인 금융 도구. 유일한 에이전트 루프는 가맹점 판단이 불확실할 때 LLM이 스스로 웹 검색 여부를 결정·반복하는 지점 하나뿐이다.
+> 실시간 배너 스크린샷 OCR 기반 캡처 파이프라인으로 개인 소비 데이터를 수집하고, 트리거별로 분리된 LangGraph 워크플로우가 분류·주간 브리핑을 수행하는 개인 금융 도구. 에이전트 루프는 딱 두 곳뿐이다 — 가맹점 판단이 불확실할 때 LLM이 스스로 웹 검색 여부를 결정·반복하는 지점, 그리고 자연어 질문에 답할 때 한 번의 조회로 부족하면 LLM이 스스로 추가 쿼리를 결정·반복하는 지점.
 
 전체 설계는 [docs/project-overview.md](docs/project-overview.md) 참고. 이 README는 지금 이 저장소에서 **실제로 돌아가는 것**과 **실행 방법**만 다룬다.
 
@@ -9,11 +9,11 @@
 | 구성 요소 | 상태 |
 |---|---|
 | 신규 거래 그래프 (`POST /webhook/capture` → 파싱 → 0차 정확 매칭 → 가맹점 판단 에이전트 루프) | ✅ 동작 — 토큰 인증, dedup, 오래된 캡처/파싱 실패 리뷰 큐 이관까지 포함 ([app/main.py](app/main.py), [app/parsing.py](app/parsing.py), [app/merchant_judgment.py](app/merchant_judgment.py)) |
-| 가맹점 판단 에이전트 루프 (실LLM, 단독 데모) | ✅ 동작 — Gemini 실제 호출로 검색/확정/에스컬레이트 트레이스 재현 ([poc/merchant_judgment_live_demo.py](poc/merchant_judgment_live_demo.py)) |
+| 가맹점 판단 에이전트 루프 (실LLM, 단독 데모) | ✅ 동작 — Groq 실제 호출로 검색/확정/에스컬레이트 트레이스 재현 ([poc/merchant_judgment_live_demo.py](poc/merchant_judgment_live_demo.py)) |
 | 가맹점 판단 에이전트 루프 (mock) | ✅ 동작 — LLM/검색 없이 스크립트 응답으로 트레이스만 재현 ([poc/merchant_judgment_poc.py](poc/merchant_judgment_poc.py)) |
-| SQLite 저장 + 채팅형 조회 화면 (`POST /query`) | ✅ 동작 — 집계형 자연어 질문(text-to-SQL) + 최근 거래 목록 ([app/query.py](app/query.py), [app/static/index.html](app/static/index.html)) |
+| SQLite 저장 + 채팅형 조회 화면 (`POST /query`) | ✅ 동작 — 집계형 자연어 질문에 답하는 두 번째 에이전트 루프(쿼리 결과가 부족하면 스스로 추가 쿼리, 최대 3회) + 최근 거래 목록 ([app/query.py](app/query.py), [app/static/index.html](app/static/index.html)) |
 | 캡처 파이프라인 클라이언트 (Back Tap → 단축어 → OCR) | ✅ 동작 — 실제 아이폰에서 Back Tap → 단축어(최근 스크린샷 → Live Text OCR → `POST /webhook/capture`)로 실 결제 캡처 확인 (docs 3.1). 이 저장소엔 코드가 없음 — 아이폰 설정/단축어 앱 안의 설정이라 git으로 관리되지 않음 |
-| 실 웹 검색 도구 연동 | ✅ 동작 — Gemini Google Search grounding으로 가맹점 검색 (docs 3.5). 검색/판단 중 LLM 장애가 나면 거래를 잃지 않고 리뷰 큐(`llm_unavailable`)로 이관 |
+| 실 웹 검색 도구 연동 | ✅ 동작 — Gemini Google Search grounding으로 가맹점 검색 (docs 3.5). 판단/QA/브리핑은 Groq(저지연 분류), 검색만 Gemini로 나눠 씀. 검색/판단 중 LLM 장애가 나면 거래를 잃지 않고 리뷰 큐(`llm_unavailable`)로 이관 |
 | 주간 브리핑 (`GET /briefing`) | ✅ 동작 — Slack 대신 웹 화면에서 최근 7일 집계 + LLM 요약을 즉시 보여준다 (스케줄러 없이 페이지 열 때마다 재계산, docs 3.4.2) |
 
 ## 빠른 시작 (Docker)
@@ -21,7 +21,7 @@
 ### 1. 환경 준비
 
 ```bash
-cp .env.example .env             # GEMINI_API_KEY, CAPTURE_WEBHOOK_TOKEN 채워넣기
+cp .env.example .env             # GEMINI_API_KEY, GROQ_API_KEY, CAPTURE_WEBHOOK_TOKEN 채워넣기
 docker compose build
 ```
 
@@ -41,7 +41,7 @@ docker compose up
 # mock (LLM/검색 없음, 재현성 검증용)
 docker compose run --rm app python poc/merchant_judgment_poc.py
 
-# 실LLM (Gemini 실제 호출, .env의 GEMINI_API_KEY 필요)
+# 실LLM (Groq 실제 호출, .env의 GROQ_API_KEY 필요)
 docker compose run --rm app python poc/merchant_judgment_live_demo.py
 ```
 
@@ -68,7 +68,15 @@ curl -X POST http://127.0.0.1:8000/query \
   -d '{"question":"이번 주 카페/디저트에 얼마 썼어?"}'
 ```
 
-질문을 SQLite `SELECT` 쿼리로 변환(text-to-SQL) → 실행 → 결과를 근거로 LLM이 자연어 답변을 생성한다. `SELECT` 이외의 문장(INSERT/UPDATE/DROP 등)은 안전성 검사에서 차단된다. 날짜/카테고리 조건이 명확한 "집계형 질문"만 지원하고, "저번에 갔던 그 카페 얼마였지?" 같은 가맹점이 불명확한 질문은 지원하지 않는다 — 이 프로젝트 스코프에서는 RAG를 쓰지 않기로 했다 (docs 3.3 참고).
+가맹점 판단 루프와 같은 패턴의 에이전트 루프다: 질문을 SQLite `SELECT` 쿼리로 변환(text-to-SQL) → 실행 → 결과로 답변 가능한지 LLM이 스스로 판단 → 부족하면(예: "지난달보다 늘었어?" 같은 비교 질문) 추가 쿼리를 스스로 요청하며 반복, 충분하면 답변 문장을 생성하고 종료한다 (재시도 한도 3회). `SELECT` 이외의 문장(INSERT/UPDATE/DROP 등)은 매 쿼리마다 안전성 검사에서 차단된다. 날짜/카테고리 조건이 명확한 "집계형 질문"만 지원하고, "저번에 갔던 그 카페 얼마였지?" 같은 가맹점이 불명확한 질문은 지원하지 않는다 — 이 프로젝트 스코프에서는 RAG를 쓰지 않기로 했다 (docs 3.3 참고).
+
+### 6. 주간 브리핑 보기
+
+```bash
+curl http://127.0.0.1:8000/briefing
+```
+
+최근 7일 SQL 집계(총액, 카테고리별 합계) + LLM이 생성한 한두 문장 요약을 함께 반환한다. 스케줄러 없이 호출할 때마다 다시 계산한다 (docs 3.4.2, Slack 대신 웹으로 대체).
 
 ### Docker 없이 로컬에서 (선택)
 
@@ -76,7 +84,7 @@ curl -X POST http://127.0.0.1:8000/query \
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # GEMINI_API_KEY 채워넣기
+cp .env.example .env             # GEMINI_API_KEY, GROQ_API_KEY 채워넣기
 python -m uvicorn app.main:app --port 8000
 ```
 
@@ -88,7 +96,7 @@ poc/merchant_judgment_poc.py     에이전트 루프 mock 재현
 poc/merchant_judgment_live_demo.py  에이전트 루프 실LLM 데모 (SQLite 저장 포함)
 app/merchant_judgment.py         가맹점 판단 에이전트 루프 (poc·웹훅 공용)
 app/parsing.py                   raw_text 파싱 + dedup용 해시
-app/query.py                     자연어 QA — text-to-SQL 변환 + 답변 생성 (집계형 질문만)
+app/query.py                     자연어 QA 에이전트 루프 — text-to-SQL 변환 + 답변 생성 (집계형 질문만)
 app/briefing.py                  주간 브리핑 — 최근 7일 집계 + LLM 요약
 app/db.py                        SQLite 저장소 (transactions / merchant_category_map / captures / review_queue)
 app/main.py                      FastAPI: POST /webhook/capture, POST /query, GET /transactions, GET /briefing, GET /
