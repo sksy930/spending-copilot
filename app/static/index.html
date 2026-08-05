@@ -166,6 +166,12 @@
   .tx-reason { color: var(--text-muted); font-size: 0.8rem; }
   .tx-time { color: var(--text-muted); font-size: 0.78rem; margin-left: auto; }
   #empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
+
+  /* --- briefing --- */
+  .briefing-content { padding: 16px; font-size: 0.92rem; }
+  .briefing-summary { margin: 0 0 10px; }
+  .briefing-total { font-weight: 700; font-size: 1.1rem; margin: 0 0 4px; }
+  .briefing-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 </style>
 </head>
 <body>
@@ -173,6 +179,13 @@
     <h1>체크카드 소비 코파일럿</h1>
     <p>캡처된 결제가 자동으로 분류되고, 소비에 대해 자연어로 물어볼 수 있어요.</p>
   </header>
+
+  <section>
+    <h2>이번 주 요약</h2>
+    <div class="tx-card" id="briefing-card">
+      <div id="briefing-content" class="briefing-content">불러오는 중...</div>
+    </div>
+  </section>
 
   <section>
     <h2>무엇이든 물어보세요</h2>
@@ -201,6 +214,24 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+async function loadBriefing() {
+  const content = document.getElementById("briefing-content");
+  try {
+    const res = await fetch("/briefing");
+    const data = await res.json();
+    let html = `<p class="briefing-total">${data.total.toLocaleString()}원 · ${data.count}건</p>`;
+    html += `<p class="briefing-summary">${escapeHtml(data.summary)}</p>`;
+    if (data.by_category && data.by_category.length > 0) {
+      html += '<div class="briefing-badges">' + data.by_category.map(
+        (c) => `<span class="badge">${escapeHtml(c.category)} ${c.total.toLocaleString()}원</span>`
+      ).join("") + "</div>";
+    }
+    content.innerHTML = html;
+  } catch (err) {
+    content.textContent = "요약을 불러오지 못했어요.";
+  }
 }
 
 async function loadTransactions() {
@@ -288,6 +319,7 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
 
 document.getElementById("refresh").addEventListener("click", loadTransactions);
 loadTransactions();
+loadBriefing();
 </script>
 </body>
 </html>

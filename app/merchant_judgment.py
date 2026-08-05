@@ -56,7 +56,9 @@ class Decision:
 class MockSearchTool:
     """search_merchant 툴의 mock 구현. 쿼리에 포함된 키워드로 스니펫을 매칭한다.
 
-    실 웹 검색 API 연동은 TBD (docs 3.5) — 그 전까지는 canned 매핑만 사용한다.
+    poc/merchant_judgment_poc.py, poc/merchant_judgment_live_demo.py처럼 docs 3.4.1의
+    정해진 트레이스를 재현성 있게 보여줘야 하는 데모용. 실 파이프라인(웹훅, 배치 재생)은
+    RealSearchTool을 쓴다.
     """
 
     def __init__(self, canned: dict[str, str]):
@@ -69,6 +71,41 @@ class MockSearchTool:
             if keyword in query:
                 return snippet
         return "검색 결과 없음"
+
+
+class RealSearchTool:
+    """search_merchant 툴의 실 구현 — Gemini의 Google Search grounding으로 검색한다 (docs 3.5).
+
+    grounding 호출이 실패하면(429는 상위로 전파, 그 외 스키마/네트워크 에러는) 루프가
+    깨지지 않도록 "검색 결과 없음"으로 안전하게 폴백한다.
+    """
+
+    def __init__(self):
+        self.call_log: list[str] = []
+
+    def search_merchant(self, query: str) -> str:
+        self.call_log.append(query)
+        try:
+            response = litellm.completion(
+                model=GEMINI_MODEL,
+                temperature=0,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"'{query}'가 어떤 업종/가게인지 웹에서 검색해서 한 문장으로 요약해줘. "
+                            "확실하지 않으면 '모르겠음'이라고만 답해."
+                        ),
+                    }
+                ],
+                tools=[{"googleSearch": {}}],
+            )
+            return response.choices[0].message.content.strip()
+        except RateLimitError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — 검색 실패는 루프 전체를 깨면 안 됨
+            print(f"  [실 웹 검색 실패, 빈 결과로 대체] {exc}")
+            return "검색 결과 없음"
 
 
 def _parse_decision(raw_text: str) -> Decision:
@@ -102,7 +139,7 @@ def call_llm(messages: list[dict]) -> Decision:
     raise RuntimeError("unreachable")
 
 
-def run_merchant_judgment_loop(transaction: Transaction, tool: MockSearchTool) -> Decision:
+def run_merchant_judgment_loop(transaction: Transaction, tool: "MockSearchTool | RealSearchTool") -> Decision:
     print(f"[입력] {transaction.merchant} / {transaction.amount}원 (0차 정확 매칭 미스)")
 
     messages = [

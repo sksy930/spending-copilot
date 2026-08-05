@@ -1,8 +1,9 @@
-"""FastAPI 서버 (docs/project-overview.md 3.2, 3.4.1, 3.7).
+"""FastAPI 서버 (docs/project-overview.md 3.2, 3.4.1~3.4.3, 3.7).
 
-GET /transactions, GET / — 조회용.
+GET /transactions, GET /briefing, GET / — 조회용.
 POST /webhook/capture — 캡처 수신, 파싱, 0차 정확 매칭 → 가맹점 판단 에이전트 루프를
 BackgroundTasks로 비동기 실행한다.
+POST /query — 자연어 질문 → text-to-SQL → 답변 (집계형 질문만, docs 3.4.3).
 """
 
 import os
@@ -15,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import db
-from app.merchant_judgment import MockSearchTool, Transaction, run_merchant_judgment_loop
+from app.briefing import generate_weekly_briefing
+from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judgment_loop
 from app.parsing import parse_capture, raw_text_hash
 from app.query import QueryError, answer_question
 
@@ -47,6 +49,12 @@ def transactions() -> list[dict]:
     return db.fetch_transactions()
 
 
+@app.get("/briefing")
+def briefing() -> dict:
+    """주간 브리핑 — 최근 7일 집계 + LLM 요약 (docs 3.4.2)."""
+    return generate_weekly_briefing()
+
+
 @app.post("/query")
 def query(payload: QueryPayload) -> dict:
     """자연어 QA — 집계형 질문 경로 (docs 3.4.3)."""
@@ -70,8 +78,15 @@ def process_new_transaction(merchant: str, amount: int) -> None:
         )
         return
 
-    tool = MockSearchTool({})  # 실 웹 검색 연동 전까지는 항상 빈 결과 (TBD, docs 3.5)
-    result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
+    tool = RealSearchTool()  # Gemini Google Search grounding (docs 3.5)
+    try:
+        result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
+    except Exception as exc:  # noqa: BLE001 — LLM 장애로 거래를 통째로 잃으면 안 됨
+        db.insert_review(
+            reason="llm_unavailable",
+            raw_text=f"{merchant} / {amount}원 — 가맹점 판단 실패: {exc}",
+        )
+        return
     db.insert_transaction(
         merchant=merchant,
         amount=amount,

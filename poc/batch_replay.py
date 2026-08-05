@@ -25,7 +25,7 @@ load_dotenv()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import db  # noqa: E402
-from app.merchant_judgment import MockSearchTool, Transaction, run_merchant_judgment_loop  # noqa: E402
+from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judgment_loop  # noqa: E402
 
 
 def replay(csv_path: str) -> None:
@@ -50,7 +50,7 @@ def replay(csv_path: str) -> None:
                 print(f"[0차 히트] {merchant} / {amount}원 -> {category}")
                 continue
 
-            tool = MockSearchTool({})
+            tool = RealSearchTool()
             result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
             llm_calls_on_miss.append(len(tool.call_log) + 1)
 
