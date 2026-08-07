@@ -31,7 +31,12 @@ from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judg
 def replay(csv_path: str) -> None:
     total = 0
     zero_tier_hits = 0
-    decision_counts = {"confirm (0차)": 0, "confirm (에이전트 루프)": 0, "escalate": 0}
+    decision_counts = {
+        "confirm (0차)": 0,
+        "confirm (에이전트 루프)": 0,
+        "escalate": 0,
+        "llm_unavailable": 0,
+    }
     llm_calls_on_miss: list[int] = []
 
     with open(csv_path, encoding="utf-8-sig", newline="") as f:
@@ -51,7 +56,14 @@ def replay(csv_path: str) -> None:
                 continue
 
             tool = RealSearchTool()
-            result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
+            try:
+                result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
+            except Exception as exc:  # noqa: BLE001 — 한 건 실패로 배치 전체를 죽이면 안 됨 (main.py 웹훅 경로와 동일 원칙)
+                decision_counts["llm_unavailable"] += 1
+                llm_calls_on_miss.append(len(tool.call_log) + 1)
+                print(f"[llm_unavailable] {merchant} / {amount}원 -> 판단 실패: {exc}")
+                continue
+
             llm_calls_on_miss.append(len(tool.call_log) + 1)
 
             if result.decision == "confirm":

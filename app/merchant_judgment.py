@@ -24,19 +24,23 @@ RATE_LIMIT_BACKOFF_SECONDS = 20
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-flash-latest")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
 
+CATEGORIES = ("음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품", "교육", "여가/오락", "의료", "미용", "교통", "기타")
+
 SYSTEM_PROMPT = """너는 체크카드 거래의 가맹점 카테고리를 판단하는 에이전트다.
 매 스텝마다 아래 JSON 스키마로만 응답한다 (다른 설명 문장 없이 JSON 객체 하나만 출력):
 
 {
+  "reason": "판단 근거를 먼저 한 문장으로 쓴다 (decision/category는 이 reason을 쓴 뒤에 정한다)",
   "decision": "confirm" | "search" | "escalate",
-  "category": "string (decision=confirm일 때만)",
+  "category": "다음 목록 중 하나, 반드시 위 reason과 같은 업종이어야 함 (decision=confirm일 때만): """ + ", ".join(CATEGORIES) + """",
   "search_query": "string (decision=search일 때만)",
-  "confidence": 0.0에서 1.0 사이 숫자,
-  "reason": "판단 근거"
+  "confidence": 0.0에서 1.0 사이 숫자
 }
 
 규칙:
+- 반드시 reason을 먼저 정하고, 그 reason에 맞춰 decision/category를 고른다 (거꾸로 category부터 정하고 reason을 끼워맞추지 않는다).
 - 가맹점명만으로 업종을 확신할 수 있으면 decision=confirm.
+- category는 반드시 위 목록 중 하나이며 reason의 내용과 모순되면 안 된다 (예: reason이 "커피숍"이라고 했으면 category는 "카페"여야 한다 — "음식점"처럼 다른 값을 쓰면 안 된다). 목록에 뚜렷이 맞는 게 없으면 "기타"를 쓴다 (새 카테고리 이름을 만들어내지 않는다).
 - 배달앱 대행 결제(예: "쿠팡이츠*상호명")처럼 실제 업종이 표면 이름과 다를 수 있으면 decision=search로 웹 검색을 요청한다.
 - 검색 결과를 받았고 그걸로 업종이 특정되면 decision=confirm.
 - 검색해도 특정이 안 되면 decision=escalate.
@@ -121,9 +125,12 @@ def _parse_decision(raw_text: str) -> Decision:
             first_line, rest = text.split("\n", 1)
             text = rest if first_line.strip().lower() in ("json", "") else text
     data = json.loads(text)
+    category = data.get("category")
+    if data["decision"] == "confirm" and category not in CATEGORIES:
+        category = "기타"  # 모델이 목록 밖 카테고리를 만들어내면 캐시 오염을 막기 위해 강제 보정
     return Decision(
         decision=data["decision"],
-        category=data.get("category"),
+        category=category,
         search_query=data.get("search_query"),
         confidence=data.get("confidence"),
         reason=data.get("reason", ""),

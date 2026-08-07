@@ -70,20 +70,24 @@
 
 ```json
 {
+  "reason": "string",         // decision/category보다 먼저 쓴다 — 근거를 정하고 나서 결론을 내리게 하기 위함
   "decision": "confirm" | "search" | "escalate",
-  "category": "string",       // decision=confirm일 때만
+  "category": "고정 목록 중 하나, reason과 모순되면 안 됨",  // decision=confirm일 때만
   "search_query": "string",   // decision=search일 때만
-  "confidence": 0.0,
-  "reason": "string"
+  "confidence": 0.0
 }
 ```
+
+`category`는 자유 텍스트가 아니라 고정 목록(`음식점/카페/베이커리/편의점/쇼핑/의류/식료품/교육/여가·오락/의료/미용/교통/기타`)에서만 고른다 — 매번 다른 이름을 만들어내면 `merchant_category_map` 캐시와 주간 브리핑/QA 집계가 카테고리별로 안 모이는 문제가 생기기 때문. `reason`을 `category`보다 먼저 쓰게 한 것도 같은 맥락의 방어책이다: 필드 순서대로 토큰을 생성하는 LLM이 근거 없이 결론부터 정하고 뒤늦게 근거를 끼워맞추는 걸 줄이기 위함 (다만 근거 자체의 사실 정확성까지 보장하진 않는다).
+
+**confidence는 게이트로 쓰지 않는다**: 처음엔 `confidence < 0.7`이면 confirm이어도 강제로 검색시키는 코드 레벨 안전장치를 넣었으나, 실측 데이터(batch_replay 125건)에서 confidence가 정답/오답을 전혀 구분하지 못하는 것으로 확인되어 제거했다 — 명백히 틀린 확정(예: "더벤티"를 커피 체인이 아닌 다른 업종으로, "투썸플레이스"를 베이커리로)도 명백히 맞는 확정(스타벅스, GS25 등)과 똑같이 confidence 0.9~1.0으로 나왔다. 즉 confidence는 근거 없는 추측에도 높게 매겨지는 모델의 자기평가일 뿐이라 임계값을 어디에 두어도 분리력이 없었다. 대신 모델이 스스로 고르는 `decision`(search/escalate) 자체는 실측에서 대체로 신뢰할 만하게 동작했다 — confidence는 로그·감사 용도로만 남겨둔다.
 
 **동작 예시 (한 건 트레이스)**
 
 1. 입력: 가맹점명 "쿠팡이츠*엔제리너스", 8,900원 — `merchant_category_map`에 미등록(0차 미스) → 루프 진입
-2. LLM 호출 1 → `{"decision": "search", "search_query": "쿠팡이츠 엔제리너스 업종", "reason": "배달앱 결제형이라 실제 업종 불명확"}`
+2. LLM 호출 1 → `{"reason": "배달앱 결제형이라 실제 업종 불명확", "decision": "search", "search_query": "쿠팡이츠 엔제리너스 업종"}`
 3. `search_merchant("쿠팡이츠 엔제리너스 업종")` 실행 → 스니펫: "엔제리너스 - 커피전문점 프랜차이즈"
-4. LLM 호출 2 (검색 결과 반영) → `{"decision": "confirm", "category": "카페", "confidence": 0.88, "reason": "검색 결과로 커피전문점 확인"}`
+4. LLM 호출 2 (검색 결과 반영) → `{"reason": "검색 결과로 커피전문점 확인", "decision": "confirm", "category": "카페", "confidence": 0.88}`
 5. 루프 종료, 카테고리 확정 → DB 저장
 
 `decision: search`가 2회 연속이면 강제로 `escalate` 처리 후 리뷰 큐로 이동한다 (재시도 한도, 6. 리스크 참고).
