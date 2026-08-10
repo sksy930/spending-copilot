@@ -4,5 +4,6 @@ __pycache__/
 venv/
 .env
 *.db
+*.db.bak.*
 chroma_db/
 data/*.csv

@@ -4,71 +4,99 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>체크카드 소비 코파일럿</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #f7f6f3;
+    --bg: #f4f6f8;
     --surface: #ffffff;
-    --border: #e5e2da;
-    --text: #262420;
-    --text-muted: #726d63;
-    --accent: #2f6f5e;
-    --accent-soft: #e4efec;
-    --confirm: #2f6f5e;
-    --escalate: #b4632c;
-    --escalate-soft: #f6ebe1;
-    --shadow: 0 1px 2px rgba(30, 27, 20, 0.04), 0 8px 24px rgba(30, 27, 20, 0.04);
+    --border: #e2ded4;
+    --text: #121110;
+    --text-muted: #6f6a61;
+    --accent: #0ea5e9;
+    --accent-soft: #e0f4fe;
+    --confirm: #0ea5e9;
+    --escalate: #d1490f;
+    --escalate-soft: #fbe8dd;
+    --shadow: 0 1px 2px rgba(20, 18, 12, 0.04), 0 12px 28px rgba(20, 18, 12, 0.06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #171613;
-      --surface: #201f1b;
-      --border: #322f29;
-      --text: #ece9e2;
-      --text-muted: #9a9488;
-      --accent: #6fbfa4;
-      --accent-soft: #223330;
-      --confirm: #6fbfa4;
-      --escalate: #e0a06a;
-      --escalate-soft: #332821;
-      --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 0, 0, 0.25);
+      --bg: #0c0c0d;
+      --surface: #19191b;
+      --border: #2b2a2c;
+      --text: #f4f3ee;
+      --text-muted: #9a968d;
+      --accent: #38bdf8;
+      --accent-soft: #103548;
+      --confirm: #38bdf8;
+      --escalate: #ff9257;
+      --escalate-soft: #3a2617;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.35);
     }
   }
 
   * { box-sizing: border-box; }
+  html { overflow-x: hidden; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
-    max-width: 760px;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
+    max-width: 1320px;
     margin: 0 auto;
-    padding: 32px 16px 64px;
+    padding: 48px 32px 80px;
     color: var(--text);
     background: var(--bg);
     line-height: 1.5;
+    overflow-x: hidden;
   }
-  header h1 { font-size: 1.4rem; margin: 0 0 2px; }
-  header p { color: var(--text-muted); margin: 0 0 28px; font-size: 0.9rem; }
+  .num { font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif; }
 
-  section { margin-bottom: 32px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 44px; flex-wrap: wrap; gap: 8px; }
+  header .kicker { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); font-weight: 700; margin: 0 0 8px; }
+  header h1 { font-size: 2rem; letter-spacing: -0.03em; margin: 0 0 6px; font-weight: 800; }
+  header p { color: var(--text-muted); margin: 0; font-size: 0.96rem; max-width: 520px; }
+
+  .layout { display: grid; grid-template-columns: 1fr; gap: 24px; align-items: start; }
+  @media (min-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr) 420px; }
+  }
+  .main-col, .side-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
   section h2 {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
     color: var(--text-muted);
-    margin: 0 0 10px;
-    font-weight: 600;
+    margin: 0 0 14px;
+    font-weight: 700;
+  }
+
+  /* --- hero stat --- */
+  .hero-stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: var(--shadow);
+    padding: 28px 32px;
+  }
+  .hero-label { font-size: 0.9rem; color: var(--text-muted); margin: 0 0 8px; font-weight: 500; }
+  .hero-value { font-size: 2.6rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; line-height: 1.05; }
+  @media (max-width: 640px) {
+    .hero-value { font-size: 2rem; }
   }
 
   /* --- chat --- */
   #chat-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 0;
     box-shadow: var(--shadow);
     overflow: hidden;
   }
   #chat-log {
-    max-height: 360px;
+    height: 253px;
     overflow-y: auto;
-    padding: 16px;
+    padding: 18px 20px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -78,136 +106,309 @@
     color: var(--text-muted);
     font-size: 0.88rem;
   }
-  .msg { max-width: 82%; padding: 9px 13px; border-radius: 12px; font-size: 0.92rem; white-space: pre-wrap; }
+  .msg { max-width: 86%; padding: 10px 14px; border-radius: 0; font-size: 0.93rem; white-space: pre-wrap; }
   .msg-user {
     align-self: flex-end;
     background: var(--accent);
     color: #fff;
-    border-bottom-right-radius: 3px;
   }
   .msg-assistant {
     align-self: flex-start;
     background: var(--accent-soft);
     color: var(--text);
-    border-bottom-left-radius: 3px;
   }
   .msg-error {
     align-self: flex-start;
     background: var(--escalate-soft);
     color: var(--escalate);
-    border-bottom-left-radius: 3px;
   }
   .msg-pending { opacity: 0.6; }
 
   #chat-form {
     display: flex;
     gap: 8px;
-    padding: 12px;
+    padding: 14px;
     border-top: 1px solid var(--border);
   }
   #chat-input {
     flex: 1;
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 12px;
+    border-radius: 0;
+    padding: 11px 18px;
     font-size: 0.92rem;
     background: var(--bg);
     color: var(--text);
+    font-family: inherit;
   }
   #chat-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   #chat-form button {
     border: none;
-    border-radius: 8px;
-    padding: 0 16px;
+    border-radius: 0;
+    padding: 0 22px;
     background: var(--accent);
     color: #fff;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
+    font-weight: 700;
     cursor: pointer;
   }
   #chat-form button:disabled { opacity: 0.5; cursor: default; }
 
-  /* --- transactions --- */
-  #tx-header { display: flex; justify-content: space-between; align-items: baseline; }
+  /* --- transactions (paginated list) --- */
+  #tx-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  #tx-header h2 { margin: 0; }
   #refresh {
     background: none;
     border: 1px solid var(--border);
     color: var(--text-muted);
-    border-radius: 8px;
-    padding: 4px 10px;
-    font-size: 0.8rem;
+    border-radius: 0;
+    padding: 5px 14px;
+    font-size: 0.78rem;
     cursor: pointer;
   }
   .tx-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 0;
     box-shadow: var(--shadow);
     overflow: hidden;
   }
-  .tx-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 2px 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-  }
+  .tx-list { padding: 6px 20px 0; }
+  .tx-row { padding: 13px 0; border-bottom: 1px solid var(--border); }
   .tx-row:last-child { border-bottom: none; }
-  .tx-merchant { font-weight: 600; font-size: 0.94rem; }
-  .tx-amount { font-weight: 600; font-size: 0.94rem; text-align: right; }
-  .tx-meta { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tx-row-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .tx-row-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .tx-merchant { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx-amount { font-weight: 700; font-size: 0.96rem; white-space: nowrap; }
+  .tx-time { color: var(--text-muted); font-size: 0.74rem; }
   .badge {
-    font-size: 0.76rem;
-    padding: 2px 8px;
-    border-radius: 999px;
+    font-size: 0.72rem;
+    padding: 3px 9px;
+    border-radius: 0;
     background: var(--accent-soft);
     color: var(--accent);
+    font-weight: 600;
   }
   .badge-escalate { background: var(--escalate-soft); color: var(--escalate); }
-  .tx-reason { color: var(--text-muted); font-size: 0.8rem; }
-  .tx-time { color: var(--text-muted); font-size: 0.78rem; margin-left: auto; }
   #empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
 
+  .pagination { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .page-btn {
+    min-width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    border-radius: 0;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-family: "Space Grotesk", inherit;
+  }
+  .page-btn:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+  .page-btn-active { background: var(--accent); color: #fff !important; font-weight: 700; }
+  .page-btn:disabled { opacity: 0.3; cursor: default; }
+  .page-ellipsis { color: var(--text-muted); font-size: 0.78rem; padding: 0 2px; }
+
   /* --- briefing --- */
-  .briefing-content { padding: 16px; font-size: 0.92rem; }
+  .briefing-content { height: 174px; overflow-y: auto; padding: 18px 20px; font-size: 0.94rem; box-sizing: border-box; }
   .briefing-summary { margin: 0 0 10px; }
   .briefing-total { font-weight: 700; font-size: 1.1rem; margin: 0 0 4px; }
   .briefing-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* --- dashboard charts --- */
+  .charts-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  @media (max-width: 640px) {
+    .charts-2col { grid-template-columns: 1fr; }
+  }
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: var(--shadow);
+    padding: 22px;
+    min-width: 0;
+  }
+  .chart-card h3 {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin: 0 0 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* axis/grid shared by SVG charts */
+  .grid-line { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .axis-tick { fill: var(--text-muted); font-size: 8px; font-family: "Space Grotesk", sans-serif; }
+  .x-tick { fill: var(--text-muted); font-size: 7.5px; font-family: "Space Grotesk", sans-serif; }
+  .value-label { fill: var(--text); font-size: 9px; font-weight: 700; font-family: "Space Grotesk", sans-serif; }
+
+  /* --- calendar heatmap --- */
+  .heatmap-wrap { display: flex; gap: 8px; }
+  .heatmap-daylabels {
+    display: grid;
+    grid-template-rows: repeat(7, 14px);
+    gap: 3px;
+    padding-top: 18px;
+    flex-shrink: 0;
+  }
+  .heatmap-daylabels span { font-size: 9px; color: var(--text-muted); line-height: 14px; }
+  .heatmap-scroll { overflow-x: auto; padding-bottom: 4px; flex: 1; min-width: 0; }
+  .heatmap-months {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 14px;
+    column-gap: 3px;
+    height: 14px;
+    margin-bottom: 4px;
+  }
+  .heatmap-month-label { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+  .heatmap-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 14px);
+    grid-auto-columns: 14px;
+    gap: 3px;
+  }
+  .heatmap-cell { width: 14px; height: 14px; border-radius: 0; cursor: default; }
+  .heatmap-cell.level-empty { background: transparent; }
+  .heatmap-cell.level-0 { background: color-mix(in oklab, var(--accent) 12%, var(--surface)); }
+  .heatmap-cell.level-1 { background: color-mix(in oklab, var(--accent) 32%, var(--surface)); }
+  .heatmap-cell.level-2 { background: color-mix(in oklab, var(--accent) 55%, var(--surface)); }
+  .heatmap-cell.level-3 { background: color-mix(in oklab, var(--accent) 78%, var(--surface)); }
+  .heatmap-cell.level-4 { background: var(--accent); }
+  .heatmap-cell:not(.level-empty):hover,
+  .heatmap-cell:not(.level-empty):focus-visible { outline: 2px solid var(--text-muted); outline-offset: 1px; }
+  .heatmap-legend { display: flex; align-items: center; gap: 4px; margin-top: 12px; font-size: 9px; color: var(--text-muted); }
+  .legend-cell { width: 10px; height: 10px; border-radius: 0; }
+
+  /* --- weekly trend line --- */
+  #weekly-chart-svg { width: 100%; height: 150px; display: block; overflow: visible; }
+  .weekly-area { fill: var(--accent); opacity: 0.12; }
+  .weekly-line { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+  .weekly-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; cursor: default; }
+  .weekly-dot:hover, .weekly-dot:focus-visible { opacity: 0.75; outline: none; }
+
+  /* --- category bars --- */
+  .cat-list { display: flex; flex-direction: column; gap: 9px; }
+  .cat-row {
+    display: grid;
+    grid-template-columns: 74px 1fr auto;
+    align-items: center;
+    gap: 10px;
+  }
+  .cat-name {
+    font-size: 0.84rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cat-track { position: relative; height: 14px; }
+  .cat-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    min-width: 3px;
+    background: var(--accent);
+    border-radius: 0;
+  }
+  .cat-value {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  #dashboard-empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
 </style>
 </head>
 <body>
   <header>
-    <h1>체크카드 소비 코파일럿</h1>
-    <p>캡처된 결제가 자동으로 분류되고, 소비에 대해 자연어로 물어볼 수 있어요.</p>
+    <div>
+      <p class="kicker">Personal Finance Copilot</p>
+      <h1>체크카드 소비 코파일럿</h1>
+      <p>캡처된 결제가 자동으로 분류되고, 소비에 대해 자연어로 물어볼 수 있어요.</p>
+    </div>
   </header>
 
-  <section>
-    <h2>이번 주 요약</h2>
-    <div class="tx-card" id="briefing-card">
-      <div id="briefing-content" class="briefing-content">불러오는 중...</div>
-    </div>
-  </section>
+  <div class="layout">
+    <div class="main-col">
+      <section>
+        <h2>소비 한눈에 보기</h2>
+        <div id="dashboard">
+          <div class="hero-stat">
+            <p class="hero-label" id="hero-label">이번 달 지출</p>
+            <p class="hero-value num" id="hero-value">-</p>
+          </div>
+          <div class="charts-2col">
+            <div class="chart-card">
+              <h3>요일별 지출 패턴</h3>
+              <div class="heatmap-wrap">
+                <div class="heatmap-daylabels">
+                  <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                </div>
+                <div class="heatmap-scroll">
+                  <div class="heatmap-months" id="heatmap-months"></div>
+                  <div class="heatmap-grid" id="heatmap-grid"></div>
+                </div>
+              </div>
+              <div class="heatmap-legend">
+                <span>적음</span>
+                <span class="legend-cell" style="background:color-mix(in oklab, var(--accent) 12%, var(--surface))"></span>
+                <span class="legend-cell" style="background:color-mix(in oklab, var(--accent) 32%, var(--surface))"></span>
+                <span class="legend-cell" style="background:color-mix(in oklab, var(--accent) 55%, var(--surface))"></span>
+                <span class="legend-cell" style="background:color-mix(in oklab, var(--accent) 78%, var(--surface))"></span>
+                <span class="legend-cell" style="background:var(--accent)"></span>
+                <span>많음</span>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h3>주간 지출 추세</h3>
+              <svg id="weekly-chart-svg"></svg>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3>카테고리별 지출</h3>
+            <div class="cat-list" id="cat-list"></div>
+          </div>
+        </div>
+        <p id="dashboard-empty" style="display:none">아직 저장된 거래가 없습니다.</p>
+      </section>
 
-  <section>
-    <h2>무엇이든 물어보세요</h2>
-    <div id="chat-card">
-      <div id="chat-log"></div>
-      <form id="chat-form">
-        <input id="chat-input" type="text" placeholder="예: 이번 주 카페 얼마 썼어?" autocomplete="off" />
-        <button type="submit" id="chat-submit">보내기</button>
-      </form>
+      <section>
+        <h2>이번 주 요약</h2>
+        <div class="tx-card" id="briefing-card">
+          <div id="briefing-content" class="briefing-content">불러오는 중...</div>
+        </div>
+      </section>
     </div>
-  </section>
 
-  <section>
-    <div id="tx-header">
-      <h2>최근 거래</h2>
-      <button id="refresh">새로고침</button>
+    <div class="side-col">
+      <section>
+        <h2>무엇이든 물어보세요</h2>
+        <div id="chat-card">
+          <div id="chat-log"></div>
+          <form id="chat-form">
+            <input id="chat-input" type="text" placeholder="예: 이번 주 카페 얼마 썼어?" autocomplete="off" />
+            <button type="submit" id="chat-submit">보내기</button>
+          </form>
+        </div>
+      </section>
+
+      <section>
+        <div id="tx-header">
+          <h2>최근 거래</h2>
+          <button id="refresh">새로고침</button>
+        </div>
+        <div class="tx-card" id="tx-card" style="display:none">
+          <div class="tx-list" id="tx-list"></div>
+          <div class="pagination" id="tx-pagination"></div>
+        </div>
+        <p id="empty" style="display:none">아직 저장된 거래가 없습니다.</p>
+      </section>
     </div>
-    <div class="tx-card" id="tx-card" style="display:none">
-      <div id="tx-list"></div>
-    </div>
-    <p id="empty">아직 저장된 거래가 없습니다.</p>
-  </section>
+  </div>
 
 <script>
 function escapeHtml(value) {
@@ -221,7 +422,7 @@ async function loadBriefing() {
   try {
     const res = await fetch("/briefing");
     const data = await res.json();
-    let html = `<p class="briefing-total">${data.total.toLocaleString()}원 · ${data.count}건</p>`;
+    let html = `<p class="briefing-total num">${data.total.toLocaleString()}원 · ${data.count}건</p>`;
     html += `<p class="briefing-summary">${escapeHtml(data.summary)}</p>`;
     if (data.by_category && data.by_category.length > 0) {
       html += '<div class="briefing-badges">' + data.by_category.map(
@@ -234,15 +435,274 @@ async function loadBriefing() {
   }
 }
 
+function formatCompact(amount) {
+  if (amount >= 10000) {
+    const man = amount / 10000;
+    return (Number.isInteger(man) ? man.toFixed(0) : man.toFixed(1)) + "만";
+  }
+  return amount.toLocaleString();
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+/* --- 요일별 지출 패턴 (calendar heatmap) --- */
+function levelFor(total, max) {
+  if (total <= 0) return 0;
+  const ratio = total / max;
+  if (ratio > 0.75) return 4;
+  if (ratio > 0.5) return 3;
+  if (ratio > 0.25) return 2;
+  return 1;
+}
+
+function renderHeatmap(daily) {
+  const grid = document.getElementById("heatmap-grid");
+  const monthsRow = document.getElementById("heatmap-months");
+  grid.textContent = "";
+  monthsRow.textContent = "";
+  if (daily.length === 0) return;
+
+  const max = Math.max(...daily.map((d) => d.total), 1);
+  const firstDate = new Date(daily[0].date + "T00:00:00");
+  const leadingEmpty = firstDate.getDay(); // 0=일
+
+  for (let i = 0; i < leadingEmpty; i++) {
+    const pad = document.createElement("div");
+    pad.className = "heatmap-cell level-empty";
+    grid.appendChild(pad);
+  }
+
+  let lastMonth = null;
+  let cellCount = leadingEmpty;
+
+  for (const d of daily) {
+    const date = new Date(d.date + "T00:00:00");
+    const level = levelFor(d.total, max);
+    const cell = document.createElement("div");
+    cell.className = `heatmap-cell level-${level}`;
+    cell.tabIndex = 0;
+    const [, month, day] = d.date.split("-");
+    cell.title = `${parseInt(month, 10)}/${parseInt(day, 10)}: ${d.total.toLocaleString()}원`;
+    grid.appendChild(cell);
+
+    const monthNum = date.getMonth();
+    if (monthNum !== lastMonth) {
+      lastMonth = monthNum;
+      const colIndex = Math.floor(cellCount / 7) + 1;
+      const label = document.createElement("span");
+      label.className = "heatmap-month-label";
+      label.style.gridColumnStart = String(colIndex);
+      label.textContent = `${monthNum + 1}월`;
+      monthsRow.appendChild(label);
+    }
+    cellCount++;
+  }
+}
+
+/* --- 주간 지출 추세 (line + area) --- */
+function renderWeeklyTrend(weekly) {
+  const svg = document.getElementById("weekly-chart-svg");
+  svg.textContent = "";
+  if (weekly.length === 0) return;
+
+  const width = svg.clientWidth || 400;
+  const height = 150;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  const leftPad = 36;
+  const rightPad = 14;
+  const topPad = 20;
+  const bottomPad = 18;
+  const plotW = width - leftPad - rightPad;
+  const plotH = height - topPad - bottomPad;
+  const baseline = topPad + plotH;
+
+  const maxTotal = Math.max(...weekly.map((w) => w.total), 1);
+  const n = weekly.length;
+  const stepX = n > 1 ? plotW / (n - 1) : 0;
+
+  [0, 0.5, 1].forEach((frac) => {
+    const y = baseline - plotH * frac;
+    svg.appendChild(svgEl("line", { class: "grid-line", x1: leftPad, x2: width - rightPad, y1: y, y2: y }));
+    const label = svgEl("text", { class: "axis-tick", x: leftPad - 6, y: y + 3, "text-anchor": "end" });
+    label.textContent = formatCompact(Math.round(maxTotal * frac));
+    svg.appendChild(label);
+  });
+
+  const points = weekly.map((w, i) => ({
+    x: leftPad + i * stepX,
+    y: baseline - (w.total / maxTotal) * plotH,
+    w,
+  }));
+
+  const areaPath = `M${points[0].x},${baseline} ` +
+    points.map((p) => `L${p.x},${p.y}`).join(" ") +
+    ` L${points[points.length - 1].x},${baseline} Z`;
+  svg.appendChild(svgEl("path", { d: areaPath, class: "weekly-area" }));
+
+  const linePath = points.map((p, i) => (i === 0 ? "M" : "L") + `${p.x},${p.y}`).join(" ");
+  svg.appendChild(svgEl("path", { d: linePath, class: "weekly-line" }));
+
+  points.forEach((p, i) => {
+    const start = new Date(p.w.week_start + "T00:00:00");
+    const label = `${start.getMonth() + 1}/${start.getDate()}`;
+
+    const dot = svgEl("circle", { cx: p.x, cy: p.y, r: 4, class: "weekly-dot", tabindex: "0" });
+    const title = svgEl("title", {});
+    title.textContent = `${label}주: ${p.w.total.toLocaleString()}원`;
+    dot.appendChild(title);
+    svg.appendChild(dot);
+
+    if (i === points.length - 1) {
+      const valueLabel = svgEl("text", { class: "value-label", x: p.x, y: Math.max(p.y - 10, 10), "text-anchor": "end" });
+      valueLabel.textContent = formatCompact(p.w.total);
+      svg.appendChild(valueLabel);
+    }
+
+    const tick = svgEl("text", { class: "x-tick", x: p.x, y: height - 4, "text-anchor": "middle" });
+    tick.textContent = label;
+    svg.appendChild(tick);
+  });
+}
+
+/* --- 카테고리별 지출 (ranked bars) --- */
+function renderCategoryChart(byCategory) {
+  const list = document.getElementById("cat-list");
+  list.textContent = "";
+  if (byCategory.length === 0) return;
+  const max = Math.max(...byCategory.map((c) => c.total));
+
+  for (const c of byCategory) {
+    const row = document.createElement("div");
+    row.className = "cat-row";
+    row.title = `${c.category}: ${c.total.toLocaleString()}원 (${c.count}건)`;
+
+    const name = document.createElement("div");
+    name.className = "cat-name";
+    name.textContent = c.category;
+
+    const track = document.createElement("div");
+    track.className = "cat-track";
+    const fill = document.createElement("div");
+    fill.className = "cat-fill";
+    fill.style.width = `${Math.max((c.total / max) * 100, 3)}%`;
+    track.appendChild(fill);
+
+    const value = document.createElement("div");
+    value.className = "cat-value num";
+    value.textContent = `${c.total.toLocaleString()}원`;
+
+    row.appendChild(name);
+    row.appendChild(track);
+    row.appendChild(value);
+    list.appendChild(row);
+  }
+}
+
+async function loadDashboard() {
+  const dashboard = document.getElementById("dashboard");
+  const empty = document.getElementById("dashboard-empty");
+  try {
+    const res = await fetch("/stats");
+    const data = await res.json();
+    if (data.count === 0) {
+      dashboard.style.display = "none";
+      empty.style.display = "block";
+      return;
+    }
+    dashboard.style.display = "block";
+    empty.style.display = "none";
+
+    const thisMonth = new Date().getMonth() + 1;
+    document.getElementById("hero-label").textContent = `${thisMonth}월 지출`;
+    document.getElementById("hero-value").textContent = `${data.month_total.toLocaleString()}원`;
+
+    renderHeatmap(data.daily);
+    renderWeeklyTrend(data.weekly);
+    renderCategoryChart(data.by_category);
+  } catch (err) {
+    dashboard.style.display = "none";
+    empty.textContent = "대시보드를 불러오지 못했어요.";
+    empty.style.display = "block";
+  }
+}
+
+/* --- 최근 거래 (페이지네이션) --- */
+let allTransactions = [];
+let currentPage = 1;
+const PAGE_SIZE = 8;
+
 async function loadTransactions() {
   const res = await fetch("/transactions");
-  const rows = await res.json();
+  allTransactions = await res.json();
+  currentPage = 1;
+  renderTransactionsPage();
+}
+
+function paginationRange(current, total) {
+  const delta = 1;
+  const range = [];
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || (i >= current - delta && i <= current + delta)) {
+      range.push(i);
+    }
+  }
+  const withEllipsis = [];
+  let prev = null;
+  for (const p of range) {
+    if (prev !== null && p - prev > 1) withEllipsis.push("…");
+    withEllipsis.push(p);
+    prev = p;
+  }
+  return withEllipsis;
+}
+
+function renderPaginationControls(container, totalPages) {
+  container.textContent = "";
+
+  const prev = document.createElement("button");
+  prev.className = "page-btn page-nav";
+  prev.textContent = "‹";
+  prev.disabled = currentPage === 1;
+  prev.addEventListener("click", () => { currentPage--; renderTransactionsPage(); });
+  container.appendChild(prev);
+
+  for (const p of paginationRange(currentPage, totalPages)) {
+    if (p === "…") {
+      const span = document.createElement("span");
+      span.className = "page-ellipsis";
+      span.textContent = "…";
+      container.appendChild(span);
+      continue;
+    }
+    const btn = document.createElement("button");
+    btn.className = "page-btn num" + (p === currentPage ? " page-btn-active" : "");
+    btn.textContent = String(p);
+    btn.addEventListener("click", () => { currentPage = p; renderTransactionsPage(); });
+    container.appendChild(btn);
+  }
+
+  const next = document.createElement("button");
+  next.className = "page-btn page-nav";
+  next.textContent = "›";
+  next.disabled = currentPage === totalPages;
+  next.addEventListener("click", () => { currentPage++; renderTransactionsPage(); });
+  container.appendChild(next);
+}
+
+function renderTransactionsPage() {
   const list = document.getElementById("tx-list");
   const card = document.getElementById("tx-card");
   const empty = document.getElementById("empty");
+  const pagination = document.getElementById("tx-pagination");
   list.innerHTML = "";
 
-  if (rows.length === 0) {
+  if (allTransactions.length === 0) {
     card.style.display = "none";
     empty.style.display = "block";
     return;
@@ -250,22 +710,33 @@ async function loadTransactions() {
   empty.style.display = "none";
   card.style.display = "block";
 
-  for (const row of rows) {
+  const totalPages = Math.ceil(allTransactions.length / PAGE_SIZE);
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = allTransactions.slice(start, start + PAGE_SIZE);
+
+  for (const row of pageRows) {
     const div = document.createElement("div");
     div.className = "tx-row";
     const isConfirm = row.decision === "confirm";
     const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
     const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
+    const shortDate = row.created_at.slice(5, 10).replace("-", "/");
     div.innerHTML = `
-      <div class="tx-merchant">${escapeHtml(row.merchant)}</div>
-      <div class="tx-amount">${row.amount.toLocaleString()}원</div>
-      <div class="tx-meta">
+      <div class="tx-row-top">
         <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
-        <span class="tx-reason">${escapeHtml(row.reason ?? "")}</span>
-        <span class="tx-time">${escapeHtml(row.created_at)}</span>
+        <span class="tx-time num">${escapeHtml(shortDate)}</span>
+      </div>
+      <div class="tx-row-main">
+        <span class="tx-merchant">${escapeHtml(row.merchant)}</span>
+        <span class="tx-amount num">${row.amount.toLocaleString()}원</span>
       </div>
     `;
     list.appendChild(div);
+  }
+
+  pagination.style.display = totalPages > 1 ? "flex" : "none";
+  if (totalPages > 1) {
+    renderPaginationControls(pagination, totalPages);
   }
 }
 
@@ -320,6 +791,12 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
 document.getElementById("refresh").addEventListener("click", loadTransactions);
 loadTransactions();
 loadBriefing();
+loadDashboard();
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(loadDashboard, 200);
+});
 </script>
 </body>
 </html>

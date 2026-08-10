@@ -13,9 +13,10 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypedDict
 
 import litellm
+from langgraph.graph import END, StateGraph
 from litellm.exceptions import RateLimitError
 
 MAX_RETRIES = 2
@@ -24,7 +25,7 @@ RATE_LIMIT_BACKOFF_SECONDS = 20
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-flash-latest")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
 
-CATEGORIES = ("음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품", "교육", "여가/오락", "의료", "미용", "교통", "기타")
+CATEGORIES = ("음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품", "교육", "여가/오락", "의료", "미용", "교통", "여행", "기타")
 
 SYSTEM_PROMPT = """너는 체크카드 거래의 가맹점 카테고리를 판단하는 에이전트다.
 매 스텝마다 아래 JSON 스키마로만 응답한다 (다른 설명 문장 없이 JSON 객체 하나만 출력):
@@ -41,6 +42,7 @@ SYSTEM_PROMPT = """너는 체크카드 거래의 가맹점 카테고리를 판�
 - 반드시 reason을 먼저 정하고, 그 reason에 맞춰 decision/category를 고른다 (거꾸로 category부터 정하고 reason을 끼워맞추지 않는다).
 - 가맹점명만으로 업종을 확신할 수 있으면 decision=confirm.
 - category는 반드시 위 목록 중 하나이며 reason의 내용과 모순되면 안 된다 (예: reason이 "커피숍"이라고 했으면 category는 "카페"여야 한다 — "음식점"처럼 다른 값을 쓰면 안 된다). 목록에 뚜렷이 맞는 게 없으면 "기타"를 쓴다 (새 카테고리 이름을 만들어내지 않는다).
+- 숙박 예약(호텔/에어비앤비 등), 여행사, 항공권 결제는 "여가/오락"이 아니라 "여행"으로 분류한다 (예: AIRBNB, 아고다, 항공사, 여행사 패키지).
 - 배달앱 대행 결제(예: "쿠팡이츠*상호명")처럼 실제 업종이 표면 이름과 다를 수 있으면 decision=search로 웹 검색을 요청한다.
 - 검색 결과를 받았고 그걸로 업종이 특정되면 decision=confirm.
 - 검색해도 특정이 안 되면 decision=escalate.
@@ -151,35 +153,90 @@ def call_llm(messages: list[dict]) -> Decision:
     raise RuntimeError("unreachable")
 
 
+class JudgmentState(TypedDict):
+    messages: list[dict]
+    tool: "MockSearchTool | RealSearchTool"
+    step: int
+    decision: Optional[Decision]
+
+
+def _judge_node(state: JudgmentState) -> dict:
+    decision = call_llm(state["messages"])
+    step = state["step"] + 1
+    print(f"  [LLM 호출 {step}] {decision}")
+    messages = state["messages"] + [
+        {"role": "assistant", "content": json.dumps(decision.__dict__, ensure_ascii=False)}
+    ]
+    return {"messages": messages, "step": step, "decision": decision}
+
+
+def _route_after_judge(state: JudgmentState) -> str:
+    decision = state["decision"]
+    if decision.decision == "confirm":
+        print(f"  -> 확정: {decision.category} (confidence={decision.confidence})")
+        return "end"
+    if decision.decision == "escalate":
+        print("  -> 리뷰 큐로 이동 (LLM이 직접 escalate 선택)")
+        return "end"
+    if state["step"] >= MAX_RETRIES:
+        return "force_escalate"
+    return "search"
+
+
+def _search_node(state: JudgmentState) -> dict:
+    decision = state["decision"]
+    snippet = state["tool"].search_merchant(decision.search_query or "")
+    print(f"  [검색] '{decision.search_query}' -> {snippet}")
+    messages = state["messages"] + [{"role": "user", "content": f"검색 결과: {snippet}"}]
+    return {"messages": messages}
+
+
+def _force_escalate_node(state: JudgmentState) -> dict:
+    print(f"  -> 재시도 한도({MAX_RETRIES}) 초과, 강제 escalate")
+    return {"decision": Decision(decision="escalate", reason=f"재시도 {MAX_RETRIES}회 초과")}
+
+
+def _build_judgment_graph():
+    graph = StateGraph(JudgmentState)
+    graph.add_node("judge", _judge_node)
+    graph.add_node("search", _search_node)
+    graph.add_node("force_escalate", _force_escalate_node)
+    graph.set_entry_point("judge")
+    graph.add_conditional_edges(
+        "judge",
+        _route_after_judge,
+        {"end": END, "search": "search", "force_escalate": "force_escalate"},
+    )
+    graph.add_edge("search", "judge")
+    graph.add_edge("force_escalate", END)
+    return graph.compile()
+
+
+_judgment_graph = _build_judgment_graph()
+
+
 def run_merchant_judgment_loop(transaction: Transaction, tool: "MockSearchTool | RealSearchTool") -> Decision:
+    """가맹점 판단 에이전트 루프 (docs 3.4.1) — LangGraph StateGraph로 구현.
+
+    judge 노드가 매 스텝 confirm/search/escalate를 스스로 결정하고, search면
+    다시 judge로 돌아가는 루프다. 재시도 한도(MAX_RETRIES)를 넘기면 강제 escalate.
+    """
     print(f"[입력] {transaction.merchant} / {transaction.amount}원 (0차 정확 매칭 미스)")
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"가맹점명: {transaction.merchant}\n"
-                f"금액: {transaction.amount}원"
-            ),
-        },
-    ]
-
-    for step in range(1, MAX_RETRIES + 1):
-        decision = call_llm(messages)
-        print(f"  [LLM 호출 {step}] {decision}")
-        messages.append({"role": "assistant", "content": json.dumps(decision.__dict__, ensure_ascii=False)})
-
-        if decision.decision == "confirm":
-            print(f"  -> 확정: {decision.category} (confidence={decision.confidence})")
-            return decision
-        if decision.decision == "escalate":
-            print("  -> 리뷰 큐로 이동 (LLM이 직접 escalate 선택)")
-            return decision
-
-        snippet = tool.search_merchant(decision.search_query or "")
-        print(f"  [검색] '{decision.search_query}' -> {snippet}")
-        messages.append({"role": "user", "content": f"검색 결과: {snippet}"})
-
-    print(f"  -> 재시도 한도({MAX_RETRIES}) 초과, 강제 escalate")
-    return Decision(decision="escalate", reason=f"재시도 {MAX_RETRIES}회 초과")
+    initial_state: JudgmentState = {
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"가맹점명: {transaction.merchant}\n"
+                    f"금액: {transaction.amount}원"
+                ),
+            },
+        ],
+        "tool": tool,
+        "step": 0,
+        "decision": None,
+    }
+    final_state = _judgment_graph.invoke(initial_state)
+    return final_state["decision"]

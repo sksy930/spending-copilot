@@ -10,33 +10,35 @@ RAG는 미매칭 거래량이 늘어나면 재검토).
 import json
 import os
 import re
-import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, TypedDict
 
 import litellm
+import psycopg2
+from langgraph.graph import END, StateGraph
 from litellm.exceptions import RateLimitError
 
-from app.db import DB_PATH
+from app.db import connect
+from app.merchant_judgment import CATEGORIES
 
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
 MAX_QUERY_STEPS = 3
 RATE_LIMIT_RETRY_ATTEMPTS = 3
 RATE_LIMIT_BACKOFF_SECONDS = 20
 
-QUERY_AGENT_SYSTEM_PROMPT = """너는 개인 소비 SQLite 데이터베이스에 대해 질문에 답하는 에이전트다.
+QUERY_AGENT_SYSTEM_PROMPT = """너는 개인 소비 Postgres 데이터베이스에 대해 질문에 답하는 에이전트다.
 
 테이블: transactions
 - id INTEGER
-- merchant TEXT (가맹점명)
+- merchant TEXT (가맹점명, 예: "스타벅스 강남점", "배달의민족")
 - amount INTEGER (결제 금액, 원)
-- category TEXT (카테고리, 아직 확정 안 된 경우 NULL)
+- category TEXT (카테고리, 아직 확정 안 된 경우 NULL) — 반드시 다음 고정 목록 중 하나: """ + ", ".join(CATEGORIES) + """
 - decision TEXT ('confirm' 확정 | 'escalate' 리뷰 필요)
 - confidence REAL
 - reason TEXT
-- created_at TEXT (SQLite datetime('now') 형식 UTC, 'YYYY-MM-DD HH:MM:SS')
+- created_at TIMESTAMPTZ (UTC)
 
 오늘 날짜(UTC): {today}
 
@@ -52,16 +54,21 @@ QUERY_AGENT_SYSTEM_PROMPT = """너는 개인 소비 SQLite 데이터베이스에
 - 지금까지 실행한 쿼리 결과로 질문에 충분히 답할 수 있으면 action=answer.
 - 비교/추세 질문(예: "지난달보다 늘었어?")처럼 한 번의 쿼리로 부족하면 action=query로
   추가 쿼리를 요청한다 — 필요한 쿼리를 한 스텝에 하나씩, 스스로 판단해서 순서대로 요청한다.
-- SQL은 transactions 테이블만 쓰는 SELECT 문 하나만 작성한다. INSERT/UPDATE/DELETE/DROP/PRAGMA/ATTACH 등은 절대 금지.
-- "이번 주"는 created_at >= datetime('now', '-7 days')로, "지난주"는 -14일~-7일 범위로,
-  "이번 달"은 strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')로, "지난달"은 그 전달로 계산한다.
+- SQL은 transactions 테이블만 쓰는 SELECT 문 하나만 작성한다. INSERT/UPDATE/DELETE/DROP/TRUNCATE/ALTER 등은 절대 금지.
+- "카페 얼마 썼어", "쇼핑 지출" 처럼 위 카테고리 목록에 있는 단어가 나오면 반드시
+  `category = '카페'`처럼 category 컬럼 정확 일치로 필터링한다 — merchant를 LIKE로
+  뒤지면 안 된다 (같은 카테고리라도 가맹점명에 그 단어가 없는 경우가 대부분이라 과소집계된다).
+  가맹점명이 명확히 특정된 질문(예: "스타벅스에서 얼마 썼어")일 때만 merchant를 사용한다.
+- "이번 주"는 created_at >= NOW() - INTERVAL '7 days'로, "지난주"는 created_at >= NOW() - INTERVAL '14 days'
+  AND created_at < NOW() - INTERVAL '7 days'로, "이번 달"은 TO_CHAR(created_at, 'YYYY-MM') = TO_CHAR(NOW(), 'YYYY-MM')로,
+  "지난달"은 TO_CHAR(created_at, 'YYYY-MM') = TO_CHAR(NOW() - INTERVAL '1 month', 'YYYY-MM')로 계산한다.
 - category가 NULL인 행(아직 미확정)은 특별한 언급이 없으면 집계에서 제외한다 (decision='confirm' AND category IS NOT NULL).
 - action=answer일 때 답변은 한국어로 한두 문장, 간결하게. 금액은 천 단위 콤마를 넣어 "12,345원"처럼 표기.
 - 조회해도 조건에 맞는 데이터가 없으면 억지로 추측하지 말고 그렇다고 답한다.
 """
 
 _FORBIDDEN_RE = re.compile(
-    r"\b(insert|update|delete|drop|alter|attach|pragma|create|replace|grant|vacuum)\b",
+    r"\b(insert|update|delete|drop|truncate|alter|attach|pragma|create|replace|grant|vacuum|copy|do)\b",
     re.IGNORECASE,
 )
 
@@ -126,38 +133,88 @@ def _is_safe_select(sql: str) -> bool:
 
 
 def _run_sql(sql: str) -> list[dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        return [dict(row) for row in cur.fetchmany(200)]
+
+
+class QAState(TypedDict):
+    messages: list[dict]
+    step: int
+    executed_sql: list[str]
+    pending_sql: Optional[str]
+    answer: Optional[str]
+
+
+def _decide_node(state: QAState) -> dict:
+    decision = _call_query_agent(state["messages"])
+    messages = state["messages"] + [
+        {"role": "assistant", "content": json.dumps(decision.__dict__, ensure_ascii=False)}
+    ]
+    step = state["step"] + 1
+
+    if decision.action == "answer":
+        return {"messages": messages, "step": step, "answer": decision.answer}
+
+    sql = (decision.sql or "").strip()
+    if not _is_safe_select(sql):
+        raise QueryError(f"안전하지 않은 쿼리라 실행할 수 없어요: {sql}")
+    return {"messages": messages, "step": step, "pending_sql": sql}
+
+
+def _route_after_decide(state: QAState) -> str:
+    return "end" if state.get("answer") is not None else "run_sql"
+
+
+def _run_sql_node(state: QAState) -> dict:
+    sql = state["pending_sql"]
     try:
-        rows = conn.execute(sql).fetchmany(200)
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+        rows = _run_sql(sql)
+    except psycopg2.Error as exc:
+        raise QueryError(f"쿼리 실행에 실패했어요: {exc}") from exc
+
+    executed_sql = state["executed_sql"] + [sql]
+    messages = state["messages"] + [
+        {"role": "user", "content": f"쿼리 결과: {json.dumps(rows, ensure_ascii=False, default=str)}"}
+    ]
+    if state["step"] >= MAX_QUERY_STEPS:
+        raise QueryError(f"질문이 복잡해서 {MAX_QUERY_STEPS}번 조회해도 답을 못 정했어요. 더 구체적으로 물어봐 주세요.")
+    return {"executed_sql": executed_sql, "messages": messages}
+
+
+def _build_qa_graph():
+    graph = StateGraph(QAState)
+    graph.add_node("decide", _decide_node)
+    graph.add_node("run_sql", _run_sql_node)
+    graph.set_entry_point("decide")
+    graph.add_conditional_edges("decide", _route_after_decide, {"end": END, "run_sql": "run_sql"})
+    graph.add_edge("run_sql", "decide")
+    return graph.compile()
+
+
+_qa_graph = _build_qa_graph()
 
 
 def answer_question(question: str) -> dict:
+    """자연어 QA — 집계형 질문 에이전트 루프 (docs 3.4.3) — LangGraph StateGraph로 구현.
+
+    decide 노드가 매 스텝 "지금 답할 수 있는가, 쿼리를 더 돌려야 하는가"를 스스로
+    결정하고, query면 run_sql로 넘어갔다가 다시 decide로 돌아가는 루프다.
+    """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    messages = [
-        {"role": "system", "content": QUERY_AGENT_SYSTEM_PROMPT.format(today=today)},
-        {"role": "user", "content": question},
-    ]
-    executed_sql: list[str] = []
-
-    for step in range(1, MAX_QUERY_STEPS + 1):
-        decision = _call_query_agent(messages)
-        messages.append({"role": "assistant", "content": json.dumps(decision.__dict__, ensure_ascii=False)})
-
-        if decision.action == "answer":
-            return {"answer": decision.answer, "sql": executed_sql, "steps": step}
-
-        sql = (decision.sql or "").strip()
-        if not _is_safe_select(sql):
-            raise QueryError(f"안전하지 않은 쿼리라 실행할 수 없어요: {sql}")
-        try:
-            rows = _run_sql(sql)
-        except sqlite3.Error as exc:
-            raise QueryError(f"쿼리 실행에 실패했어요: {exc}") from exc
-        executed_sql.append(sql)
-        messages.append({"role": "user", "content": f"쿼리 결과: {json.dumps(rows, ensure_ascii=False)}"})
-
-    raise QueryError(f"질문이 복잡해서 {MAX_QUERY_STEPS}번 조회해도 답을 못 정했어요. 더 구체적으로 물어봐 주세요.")
+    initial_state: QAState = {
+        "messages": [
+            {"role": "system", "content": QUERY_AGENT_SYSTEM_PROMPT.format(today=today)},
+            {"role": "user", "content": question},
+        ],
+        "step": 0,
+        "executed_sql": [],
+        "pending_sql": None,
+        "answer": None,
+    }
+    final_state = _qa_graph.invoke(initial_state)
+    return {
+        "answer": final_state["answer"],
+        "sql": final_state["executed_sql"],
+        "steps": final_state["step"],
+    }

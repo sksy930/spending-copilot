@@ -17,9 +17,10 @@ from pydantic import BaseModel
 
 from app import db
 from app.briefing import generate_weekly_briefing
-from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judgment_loop
+from app.new_transaction_graph import process_new_transaction
 from app.parsing import parse_capture, raw_text_hash
 from app.query import QueryError, answer_question
+from app.stats import fetch_spending_overview
 
 app = FastAPI(title="Spending Copilot (toy)")
 
@@ -55,6 +56,12 @@ def briefing() -> dict:
     return generate_weekly_briefing()
 
 
+@app.get("/stats")
+def stats() -> dict:
+    """소비 대시보드 — 저장된 전체 기간의 일별/카테고리별 집계."""
+    return fetch_spending_overview()
+
+
 @app.post("/query")
 def query(payload: QueryPayload) -> dict:
     """자연어 QA — 집계형 질문 경로 (docs 3.4.3)."""
@@ -62,41 +69,6 @@ def query(payload: QueryPayload) -> dict:
         return answer_question(payload.question)
     except QueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def process_new_transaction(merchant: str, amount: int) -> None:
-    """0차 정확 매칭 → 가맹점 판단 에이전트 루프 (3.4.1)."""
-    category = db.lookup_category(merchant)
-    if category is not None:
-        db.insert_transaction(
-            merchant=merchant,
-            amount=amount,
-            category=category,
-            decision="confirm",
-            confidence=1.0,
-            reason="0차 정확 매칭",
-        )
-        return
-
-    tool = RealSearchTool()  # Gemini Google Search grounding (docs 3.5)
-    try:
-        result = run_merchant_judgment_loop(Transaction(merchant=merchant, amount=amount), tool)
-    except Exception as exc:  # noqa: BLE001 — LLM 장애로 거래를 통째로 잃으면 안 됨
-        db.insert_review(
-            reason="llm_unavailable",
-            raw_text=f"{merchant} / {amount}원 — 가맹점 판단 실패: {exc}",
-        )
-        return
-    db.insert_transaction(
-        merchant=merchant,
-        amount=amount,
-        category=result.category,
-        decision=result.decision,
-        confidence=result.confidence,
-        reason=result.reason,
-    )
-    if result.decision == "confirm" and result.category:
-        db.upsert_merchant_category(merchant, result.category)
 
 
 @app.post("/webhook/capture")
