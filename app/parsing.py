@@ -25,21 +25,33 @@
 시작으로 보고, 다음 금액이 나오기 전까지를 그 건의 블록으로 잘라 그 안에서만
 가맹점명을 찾는다. 이렇게 블록을 나누지 않으면 정규식이 텍스트 전체에서 처음
 매칭되는 것 하나만 찾아서, 두 번째 이후 결제가 조용히 유실된다.
+
+체크카드 결제 말고 계좌 출금(네이버페이/카카오페이 충전 등)도 실제 소비이지만
+형식이 완전히 다르고 가맹점명 자체가 없다:
+
+    10,000원 출금
+    내 토스뱅크 통장 → 네이버페이충전
+
+가맹점 정보가 없어 LLM이 판단할 방법이 없으므로, 이 형식은 가맹점 판단 루프를
+아예 안 태우고 곧장 escalate시켜 사람이 카테고리를 정하게 한다
+(app/new_transaction_graph.py의 force_escalate 참고).
 """
 
 import hashlib
 import re
 from dataclasses import dataclass
 
-_AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*결제")
+_AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*(결제|출금)")
 _MERCHANT_RE = re.compile(r"결제\s*\|\s*(.+?)\n?\s*잔액", re.S)
 _MERCHANT_RE_NOTIFICATION_CENTER = re.compile(r"체크카드\s*\|\s*(.+?)\s*잔액", re.S)
+_WITHDRAWAL_DEST_RE = re.compile(r"통장\s*→\s*(.+?)(?:\n|$)")
 
 
 @dataclass
 class ParsedCapture:
     merchant: str
     amount: int
+    force_escalate: bool = False
 
 
 def parse_captures(raw_text: str) -> list[ParsedCapture]:
@@ -50,6 +62,18 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
         block_start = amount_match.start()
         block_end = amount_matches[i + 1].start() if i + 1 < len(amount_matches) else len(raw_text)
         block = raw_text[block_start:block_end]
+        amount = int(amount_match.group(1).replace(",", ""))
+        kind = amount_match.group(2)
+
+        if kind == "출금":
+            dest_match = _WITHDRAWAL_DEST_RE.search(block)
+            if not dest_match:
+                continue
+            destination = dest_match.group(1).strip()
+            if not destination:
+                continue
+            results.append(ParsedCapture(merchant=destination, amount=amount, force_escalate=True))
+            continue
 
         merchant_match = _MERCHANT_RE.search(block) or _MERCHANT_RE_NOTIFICATION_CENTER.search(block)
         if not merchant_match:
@@ -59,7 +83,6 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
         if not merchant:
             continue
 
-        amount = int(amount_match.group(1).replace(",", ""))
         results.append(ParsedCapture(merchant=merchant, amount=amount))
 
     return results

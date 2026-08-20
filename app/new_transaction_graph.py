@@ -22,6 +22,7 @@ class NewTransactionState(TypedDict):
     confidence: Optional[float]
     reason: str
     judgment_failed: bool
+    force_escalate: bool
 
 
 def _zero_shot_match_node(state: NewTransactionState) -> dict:
@@ -37,7 +38,22 @@ def _zero_shot_match_node(state: NewTransactionState) -> dict:
 
 
 def _route_after_zero_shot(state: NewTransactionState) -> str:
-    return "persist" if state.get("decision") == "confirm" else "judge"
+    if state.get("decision") == "confirm":
+        return "persist"
+    if state.get("force_escalate"):
+        return "force_escalate"
+    return "judge"
+
+
+def _force_escalate_node(state: NewTransactionState) -> dict:
+    """계좌 출금(네이버페이/카카오페이 충전 등) — 가맹점명이 없어 판단 루프 자체를
+    안 태우고 곧장 사람 확인으로 넘긴다 (app/parsing.py의 출금 파싱 참고)."""
+    return {
+        "category": None,
+        "decision": "escalate",
+        "confidence": None,
+        "reason": "가맹점 정보 없음 — 계좌 출금/충전 알림이라 자동 판단 불가",
+    }
 
 
 def _judge_node(state: NewTransactionState) -> dict:
@@ -91,15 +107,19 @@ def _build_new_transaction_graph():
     graph = StateGraph(NewTransactionState)
     graph.add_node("zero_shot", _zero_shot_match_node)
     graph.add_node("judge", _judge_node)
+    graph.add_node("force_escalate", _force_escalate_node)
     graph.add_node("persist", _persist_node)
     graph.add_node("review", _review_node)
     graph.set_entry_point("zero_shot")
     graph.add_conditional_edges(
-        "zero_shot", _route_after_zero_shot, {"persist": "persist", "judge": "judge"}
+        "zero_shot",
+        _route_after_zero_shot,
+        {"persist": "persist", "judge": "judge", "force_escalate": "force_escalate"},
     )
     graph.add_conditional_edges(
         "judge", _route_after_judge, {"persist": "persist", "review": "review"}
     )
+    graph.add_edge("force_escalate", "persist")
     graph.add_edge("persist", END)
     graph.add_edge("review", END)
     return graph.compile()
@@ -108,8 +128,9 @@ def _build_new_transaction_graph():
 _new_transaction_graph = _build_new_transaction_graph()
 
 
-def process_new_transaction(merchant: str, amount: int) -> None:
-    """0차 정확 매칭 → 가맹점 판단 에이전트 루프 (3.4.1)."""
+def process_new_transaction(merchant: str, amount: int, force_escalate: bool = False) -> None:
+    """0차 정확 매칭 → 가맹점 판단 에이전트 루프, 또는 가맹점 정보가 아예 없으면
+    (계좌 출금 등) 판단 루프 없이 곧장 escalate (3.4.1)."""
     _new_transaction_graph.invoke(
         {
             "merchant": merchant,
@@ -119,5 +140,6 @@ def process_new_transaction(merchant: str, amount: int) -> None:
             "confidence": None,
             "reason": "",
             "judgment_failed": False,
+            "force_escalate": force_escalate,
         }
     )

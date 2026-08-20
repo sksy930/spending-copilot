@@ -105,7 +105,9 @@ def webhook_capture(
         return {"status": "parse_failed"}
 
     for parsed in parsed_list:
-        background_tasks.add_task(process_new_transaction, parsed.merchant, parsed.amount)
+        background_tasks.add_task(
+            process_new_transaction, parsed.merchant, parsed.amount, parsed.force_escalate
+        )
     return {"status": "accepted", "count": len(parsed_list)}
 
 
