@@ -17,22 +17,18 @@ RAG는 미매칭 거래량이 늘어나면 재검토).
 import json
 import os
 import re
-import time
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
-import litellm
 import psycopg2
 from langgraph.graph import END, StateGraph
-from litellm.exceptions import RateLimitError
 
 from app.db import connect
+from app.llm import complete_with_fallback
 from app.merchant_judgment import CATEGORIES
 
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/openai/gpt-oss-20b")
 MAX_QUERY_STEPS = 3
-RATE_LIMIT_RETRY_ATTEMPTS = 3
-RATE_LIMIT_BACKOFF_SECONDS = 20
 
 QUERY_AGENT_SYSTEM_PROMPT = """너는 개인 소비 데이터에 대해 질문에 답하는 에이전트다.
 
@@ -225,17 +221,12 @@ def _fast_path(question: str) -> Optional[dict]:
 
 
 def _call_query_agent(messages: list[dict]):
-    """Groq 무료 티어의 요청 제한(429)에 걸리면 잠깐 대기 후 재시도한다."""
-    for attempt in range(1, RATE_LIMIT_RETRY_ATTEMPTS + 1):
-        try:
-            response = litellm.completion(model=GROQ_MODEL, temperature=0, messages=messages, tools=TOOLS)
-            return response.choices[0].message
-        except RateLimitError:
-            if attempt == RATE_LIMIT_RETRY_ATTEMPTS:
-                raise QueryError("지금 LLM 무료 할당량이 다 찼어요. 잠시 후 다시 시도해주세요.")
-            print(f"  [rate limit] {RATE_LIMIT_BACKOFF_SECONDS}초 대기 후 재시도 ({attempt}/{RATE_LIMIT_RETRY_ATTEMPTS})")
-            time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
-    raise RuntimeError("unreachable")
+    """Groq가 기본, 실패하면 Gemini로 자동 대체 (app/llm.py). 둘 다 안 되면 QueryError."""
+    try:
+        response = complete_with_fallback(GROQ_MODEL, temperature=0, messages=messages, tools=TOOLS)
+    except Exception as exc:  # noqa: BLE001 — Groq/Gemini 둘 다 실패한 경우
+        raise QueryError("지금 AI 서비스에 문제가 있어서 질문을 처리 못 했어요. 잠시 후 다시 시도해주세요.") from exc
+    return response.choices[0].message
 
 
 class QAState(TypedDict):

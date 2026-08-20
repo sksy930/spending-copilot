@@ -10,11 +10,10 @@ import json
 import os
 from typing import TypedDict
 
-import litellm
 from langgraph.graph import END, StateGraph
-from litellm.exceptions import RateLimitError
 
 from app.db import connect
+from app.llm import complete_with_fallback
 
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/openai/gpt-oss-20b")
 
@@ -66,8 +65,8 @@ def _summarize_node(state: BriefingState) -> dict:
         return {"summary": "이번 주는 기록된 소비가 없어요."}
 
     try:
-        response = litellm.completion(
-            model=GROQ_MODEL,
+        response = complete_with_fallback(
+            GROQ_MODEL,
             temperature=0,
             messages=[
                 {"role": "system", "content": BRIEFING_SYSTEM_PROMPT},
@@ -85,8 +84,8 @@ def _summarize_node(state: BriefingState) -> dict:
             ],
         )
         summary = response.choices[0].message.content.strip()
-    except RateLimitError:
-        summary = "지금 LLM 무료 할당량이 다 차서 요약 문장을 못 만들었어요. 아래 집계 숫자는 정상입니다."
+    except Exception:  # noqa: BLE001 — Groq/Gemini 둘 다 실패한 경우, 집계 숫자는 정상이니 거래를 잃지 않는다
+        summary = "지금 AI 서비스에 문제가 있어서 요약 문장을 못 만들었어요. 아래 집계 숫자는 정상입니다."
 
     return {"summary": summary}
 

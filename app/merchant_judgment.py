@@ -11,7 +11,6 @@
 
 import json
 import os
-import time
 from dataclasses import dataclass
 from typing import Optional, TypedDict
 
@@ -19,9 +18,9 @@ import litellm
 from langgraph.graph import END, StateGraph
 from litellm.exceptions import RateLimitError
 
+from app.llm import complete_with_fallback
+
 MAX_RETRIES = 2
-RATE_LIMIT_RETRY_ATTEMPTS = 3
-RATE_LIMIT_BACKOFF_SECONDS = 20
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-flash-latest")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/openai/gpt-oss-20b")
 
@@ -140,17 +139,9 @@ def _parse_decision(raw_text: str) -> Decision:
 
 
 def call_llm(messages: list[dict]) -> Decision:
-    """판단 전용 — Groq. 무료 티어 요청 제한(429)에 걸리면 잠깐 대기 후 재시도한다."""
-    for attempt in range(1, RATE_LIMIT_RETRY_ATTEMPTS + 1):
-        try:
-            response = litellm.completion(model=GROQ_MODEL, messages=messages, temperature=0)
-            return _parse_decision(response.choices[0].message.content)
-        except RateLimitError:
-            if attempt == RATE_LIMIT_RETRY_ATTEMPTS:
-                raise
-            print(f"  [rate limit] {RATE_LIMIT_BACKOFF_SECONDS}초 대기 후 재시도 ({attempt}/{RATE_LIMIT_RETRY_ATTEMPTS})")
-            time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
-    raise RuntimeError("unreachable")
+    """판단 전용 — Groq가 기본, 실패하면 Gemini로 자동 대체 (app/llm.py)."""
+    response = complete_with_fallback(GROQ_MODEL, messages=messages, temperature=0)
+    return _parse_decision(response.choices[0].message.content)
 
 
 class JudgmentState(TypedDict):
