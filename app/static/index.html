@@ -344,10 +344,45 @@
   .heatmap-cell.level-2 { background: color-mix(in oklab, var(--accent) 55%, var(--surface)); }
   .heatmap-cell.level-3 { background: color-mix(in oklab, var(--accent) 78%, var(--surface)); }
   .heatmap-cell.level-4 { background: var(--accent); }
+  .heatmap-cell:not(.level-empty) { cursor: pointer; }
   .heatmap-cell:not(.level-empty):hover,
   .heatmap-cell:not(.level-empty):focus-visible { outline: 2px solid var(--text-muted); outline-offset: 1px; }
   .heatmap-legend { display: flex; align-items: center; gap: 4px; margin-top: 12px; font-size: 9px; color: var(--text-muted); }
   .legend-cell { width: 10px; height: 10px; border-radius: 0; }
+
+  /* --- 일별 소비 상세 모달 --- */
+  .day-detail-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+    z-index: 100; align-items: center; justify-content: center; padding: 20px;
+  }
+  .day-detail-overlay.open { display: flex; }
+  .day-detail-panel {
+    background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+    width: 100%; max-width: 420px; max-height: 80vh; display: flex; flex-direction: column;
+  }
+  .day-detail-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 18px 20px; border-bottom: 1px solid var(--border);
+  }
+  .day-detail-date { font-weight: 700; font-size: 1rem; margin: 0 0 4px; }
+  .day-detail-total { color: var(--text-muted); font-size: 0.84rem; margin: 0; }
+  .day-detail-close {
+    border: none; background: none; color: var(--text-muted); font-size: 1rem; cursor: pointer;
+    padding: 2px 6px;
+  }
+  .day-detail-close:hover { color: var(--text); }
+  .day-detail-list { overflow-y: auto; padding: 6px 20px 18px; }
+  .day-detail-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  .day-detail-row:last-child { border-bottom: none; }
+  .day-detail-row-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .day-detail-merchant { font-weight: 600; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-detail-meta { display: flex; align-items: center; gap: 6px; }
+  .day-detail-time { color: var(--text-muted); font-size: 0.72rem; }
+  .day-detail-amount { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+  .day-detail-empty { color: var(--text-muted); font-size: 0.88rem; text-align: center; padding: 24px 0; }
 
   /* --- weekly trend line --- */
   #weekly-chart-svg { width: 100%; height: 150px; display: block; overflow: visible; }
@@ -486,6 +521,19 @@
     </div>
   </div>
 
+  <div id="day-detail-overlay" class="day-detail-overlay">
+    <div class="day-detail-panel">
+      <div class="day-detail-header">
+        <div>
+          <p class="day-detail-date" id="day-detail-date"></p>
+          <p class="day-detail-total" id="day-detail-total"></p>
+        </div>
+        <button id="day-detail-close" class="day-detail-close" title="닫기">✕</button>
+      </div>
+      <div class="day-detail-list" id="day-detail-list"></div>
+    </div>
+  </div>
+
 <script>
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (c) => ({
@@ -496,6 +544,15 @@ function escapeHtml(value) {
 const KST_DATETIME_FMT = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
 });
+const KST_DATE_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }); // "YYYY-MM-DD"
+const KST_TIME_ONLY_FMT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false,
+});
+
+function kstDateKey(isoString) {
+  // 히트맵의 날짜(YYYY-MM-DD, KST 기준 집계)랑 대조하려면 거래 시각도 같은 방식으로 변환해야 한다.
+  return KST_DATE_FMT.format(new Date(isoString));
+}
 
 function formatKstDateTime(isoString) {
   // API가 UTC로 내려주므로(예: "2026-08-20T03:06:00Z") 문자열을 그대로 자르면 안 되고
@@ -574,6 +631,7 @@ function renderHeatmap(daily) {
     const cell = document.createElement("div");
     cell.className = `heatmap-cell level-${level}`;
     cell.tabIndex = 0;
+    cell.dataset.date = d.date;
     const [, month, day] = d.date.split("-");
     cell.title = `${parseInt(month, 10)}/${parseInt(day, 10)}: ${d.total.toLocaleString()}원`;
     grid.appendChild(cell);
@@ -1085,6 +1143,76 @@ document.getElementById("tx-list").addEventListener("click", (e) => {
 
   badge.replaceWith(select);
   select.focus();
+});
+
+const DAY_DETAIL_DATE_FMT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "short",
+});
+
+function showDayDetail(dateStr) {
+  const rows = allTransactions.filter((row) => kstDateKey(row.created_at) === dateStr);
+  rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  document.getElementById("day-detail-date").textContent = DAY_DETAIL_DATE_FMT.format(new Date(dateStr + "T00:00:00"));
+  document.getElementById("day-detail-total").textContent = rows.length === 0
+    ? "소비 내역 없음"
+    : `${total.toLocaleString()}원 · ${rows.length}건`;
+
+  const list = document.getElementById("day-detail-list");
+  list.textContent = "";
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "day-detail-empty";
+    empty.textContent = "이 날은 기록된 소비가 없어요.";
+    list.appendChild(empty);
+  } else {
+    for (const row of rows) {
+      const div = document.createElement("div");
+      div.className = "day-detail-row";
+      const isConfirm = row.decision === "confirm";
+      const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
+      const badgeStyle = categoryBadgeStyle(isConfirm ? row.category : null);
+      const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
+      div.innerHTML = `
+        <div class="day-detail-row-left">
+          <span class="day-detail-merchant">${escapeHtml(row.merchant)}</span>
+          <span class="day-detail-meta">
+            <span class="${badgeClass}"${badgeStyle}>${escapeHtml(badgeText)}</span>
+            <span class="day-detail-time">${KST_TIME_ONLY_FMT.format(new Date(row.created_at))}</span>
+          </span>
+        </div>
+        <span class="day-detail-amount num">${row.amount.toLocaleString()}원</span>
+      `;
+      list.appendChild(div);
+    }
+  }
+
+  document.getElementById("day-detail-overlay").classList.add("open");
+}
+
+function closeDayDetail() {
+  document.getElementById("day-detail-overlay").classList.remove("open");
+}
+
+document.getElementById("heatmap-grid").addEventListener("click", (e) => {
+  const cell = e.target.closest(".heatmap-cell");
+  if (!cell || !cell.dataset.date) return;
+  showDayDetail(cell.dataset.date);
+});
+document.getElementById("heatmap-grid").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const cell = e.target.closest(".heatmap-cell");
+  if (!cell || !cell.dataset.date) return;
+  e.preventDefault();
+  showDayDetail(cell.dataset.date);
+});
+document.getElementById("day-detail-close").addEventListener("click", closeDayDetail);
+document.getElementById("day-detail-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "day-detail-overlay") closeDayDetail();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeDayDetail();
 });
 
 document.getElementById("refresh").addEventListener("click", loadTransactions);
