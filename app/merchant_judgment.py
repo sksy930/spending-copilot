@@ -142,8 +142,15 @@ def _parse_decision(raw_text: str) -> Decision:
 
 
 def call_llm(messages: list[dict]) -> Decision:
-    """판단 전용 — Groq가 기본, 실패하면 Gemini로 자동 대체 (app/llm.py)."""
-    response = complete_with_fallback(GROQ_MODEL, messages=messages, temperature=0)
+    """판단 전용 — Gemini가 기본, 실패하면 Groq로 자동 대체 (app/llm.py).
+
+    다른 두 곳(QA, 브리핑)은 Groq가 기본이지만, 여기만 반대다: 실측 비교에서
+    한국 브랜드 실세계 지식이 필요한 가맹점 판단은 Gemini가 Groq(gpt-oss-20b)보다
+    확실히 정확했다(폴바셋 사례 — Groq는 확신 0.95로 "베이커리" 오답, Gemini는
+    확신 0.99로 "카페" 정답). 검색이 필요할 때 어차피 Gemini를 쓰니(RealSearchTool),
+    판단 자체도 Gemini로 옮기는 게 자연스럽다.
+    """
+    response = complete_with_fallback(GEMINI_MODEL, fallback_model=GROQ_MODEL, messages=messages, temperature=0)
     return _parse_decision(response.choices[0].message.content)
 
 

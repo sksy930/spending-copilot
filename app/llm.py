@@ -20,12 +20,17 @@ FALLBACK_RETRY_ATTEMPTS = 2
 FALLBACK_BACKOFF_SECONDS = 5
 
 
-def complete_with_fallback(primary_model: str, **kwargs):
-    """primary_model(보통 Groq)로 시도하고, 실패하면 FALLBACK_MODEL(Gemini)로 넘어간다.
+def complete_with_fallback(primary_model: str, fallback_model: str = None, **kwargs):
+    """primary_model로 시도하고, 실패하면 fallback_model(기본 Gemini)로 넘어간다.
+
+    호출부 대부분은 Groq가 기본이라 fallback_model을 안 주면 FALLBACK_MODEL(Gemini)로
+    떨어진다. 가맹점 판단처럼 반대로 Gemini가 기본이고 Groq가 대체여야 하는 곳은
+    fallback_model=GROQ_MODEL을 넘긴다 (app/merchant_judgment.py).
 
     둘 다 실패하면 가장 마지막에 발생한 예외를 그대로 던진다 — 호출하는 쪽의 기존
     except 처리(RateLimitError를 review_queue로 보내는 등)가 그대로 먹힌다.
     """
+    fallback_model = fallback_model or FALLBACK_MODEL
     last_exc: Exception = RuntimeError("no attempt made")
     for attempt in range(1, PRIMARY_RETRY_ATTEMPTS + 1):
         try:
@@ -39,14 +44,14 @@ def complete_with_fallback(primary_model: str, **kwargs):
             last_exc = exc
             break
 
-    print(f"  [{primary_model} 실패: {last_exc}] {FALLBACK_MODEL}로 대체 시도")
+    print(f"  [{primary_model} 실패: {last_exc}] {fallback_model}로 대체 시도")
     for attempt in range(1, FALLBACK_RETRY_ATTEMPTS + 1):
         try:
-            return litellm.completion(model=FALLBACK_MODEL, **kwargs)
+            return litellm.completion(model=fallback_model, **kwargs)
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             if attempt < FALLBACK_RETRY_ATTEMPTS:
-                print(f"  [{FALLBACK_MODEL} 실패, {FALLBACK_BACKOFF_SECONDS}초 후 재시도]")
+                print(f"  [{fallback_model} 실패, {FALLBACK_BACKOFF_SECONDS}초 후 재시도]")
                 time.sleep(FALLBACK_BACKOFF_SECONDS)
 
     raise last_exc
