@@ -20,6 +20,21 @@
     --escalate: #d1490f;
     --escalate-soft: #fbe8dd;
     --shadow: 0 1px 2px rgba(20, 18, 12, 0.04), 0 12px 28px rgba(20, 18, 12, 0.06);
+
+    /* 카테고리별 색상 — 색상환에 13개를 균등 배치 + 색맹 시뮬레이션 검증(dataviz 스킬) */
+    --cat-food: #9e412e;        --cat-food-soft: #f7edeb;
+    --cat-cafe: #ae8032;        --cat-cafe-soft: #f7f3eb;
+    --cat-bakery: #949e2e;      --cat-bakery-soft: #f6f7eb;
+    --cat-grocery: #6aae32;     --cat-grocery-soft: #f0f7eb;
+    --cat-travel: #2e9e2f;      --cat-travel-soft: #ebf7eb;
+    --cat-store: #32ae6d;       --cat-store-soft: #ebf7f1;
+    --cat-beauty: #2e9e97;      --cat-beauty-soft: #ebf7f6;
+    --cat-transit: #2f84bc;     --cat-transit-soft: #ebf2f7;
+    --cat-edu: #2f43bc;         --cat-edu-soft: #ebecf7;
+    --cat-medical: #5c2fbc;     --cat-medical-soft: #efebf7;
+    --cat-leisure: #9d2fbc;     --cat-leisure-soft: #f5ebf7;
+    --cat-apparel: #ae3290;     --cat-apparel-soft: #f7ebf4;
+    --cat-shopping: #9e2e4f;    --cat-shopping-soft: #f7ebee;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -34,6 +49,20 @@
       --escalate: #ff9257;
       --escalate-soft: #3a2617;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.35);
+
+      --cat-food: #d05239;        --cat-food-soft: #3d1d17;
+      --cat-cafe: #ae7c29;        --cat-cafe-soft: #3d2f17;
+      --cat-bakery: #929d25;      --cat-bakery-soft: #3a3d17;
+      --cat-grocery: #518c21;     --cat-grocery-soft: #283d17;
+      --cat-travel: #29ae2a;      --cat-travel-soft: #173d18;
+      --cat-store: #29ae68;       --cat-store-soft: #173d29;
+      --cat-beauty: #27a59d;      --cat-beauty-soft: #173d3b;
+      --cat-transit: #3090cf;     --cat-transit-soft: #172e3d;
+      --cat-edu: #4155d2;         --cat-edu-soft: #171c3d;
+      --cat-medical: #8962da;     --cat-medical-soft: #23173d;
+      --cat-leisure: #af39d0;     --cat-leisure-soft: #35173d;
+      --cat-apparel: #d039ac;     --cat-apparel-soft: #3d1734;
+      --cat-shopping: #d03965;    --cat-shopping-soft: #3d1722;
     }
   }
 
@@ -643,6 +672,7 @@ function renderCategoryChart(byCategory) {
     const fill = document.createElement("div");
     fill.className = "cat-fill";
     fill.style.width = `${Math.max((c.total / max) * 100, 3)}%`;
+    fill.style.background = categoryColorVar(c.category);
     track.appendChild(fill);
 
     const value = document.createElement("div");
@@ -772,10 +802,11 @@ function renderTransactionsPage() {
     const isConfirm = row.decision === "confirm";
     const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
     const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
+    const badgeStyle = categoryBadgeStyle(isConfirm ? row.category : null);
     const dateTime = formatKstDateTime(row.created_at);
     div.innerHTML = `
       <div class="tx-row-top">
-        <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
+        <span class="${badgeClass}"${badgeStyle}>${escapeHtml(badgeText)}</span>
         <span class="tx-time num">${escapeHtml(dateTime)}</span>
       </div>
       <div class="tx-row-main">
@@ -879,6 +910,26 @@ const REVIEW_CATEGORIES = [
   "음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품",
   "교육", "여가/오락", "의료", "미용", "교통", "여행", "기타",
 ];
+
+// 카테고리 → CSS 변수 슬러그. "기타"는 일부러 안 넣음 — 지정 카테고리가 없다는
+// 뜻이라 나머지 13개와 구분되게 기본(회색/파랑) 배지로 남겨둔다.
+const CATEGORY_COLOR_SLUG = {
+  "음식점": "food", "카페": "cafe", "베이커리": "bakery", "식료품": "grocery",
+  "여행": "travel", "편의점": "store", "미용": "beauty", "교통": "transit",
+  "교육": "edu", "의료": "medical", "여가/오락": "leisure", "의류": "apparel",
+  "쇼핑": "shopping",
+};
+
+function categoryBadgeStyle(category) {
+  const slug = CATEGORY_COLOR_SLUG[category];
+  if (!slug) return "";
+  return ` style="background:var(--cat-${slug}-soft);color:var(--cat-${slug})"`;
+}
+
+function categoryColorVar(category) {
+  const slug = CATEGORY_COLOR_SLUG[category];
+  return slug ? `var(--cat-${slug})` : "var(--accent)";
+}
 
 function renderPendingReviews(items) {
   const badge = document.getElementById("review-badge");
