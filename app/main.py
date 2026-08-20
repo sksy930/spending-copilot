@@ -129,14 +129,22 @@ def review_page(transaction_id: int) -> str:
 
     if transaction["decision"] == "confirm":
         category = html.escape(transaction["category"] or "")
-        body = f'<p class="done">이미 "{category}"(으)로 처리됐어요.</p>'
+        body = f"""
+        <div class="done">
+          <p>이미 "{category}"(으)로 처리됐어요.</p>
+          <button class="close-btn" onclick="window.close()">닫기</button>
+        </div>
+        """
     else:
         buttons = "\n".join(
             f'<button onclick="pick(\'{html.escape(c)}\')">{html.escape(c)}</button>' for c in CATEGORIES
         )
         body = f"""
         <div class="cats" id="cats">{buttons}</div>
-        <p class="done" id="done" style="display:none">저장됐어요 ✓</p>
+        <div class="done" id="done" style="display:none">
+          <p>저장됐어요 ✓</p>
+          <button class="close-btn" onclick="window.close()">닫기</button>
+        </div>
         <script>
         async function pick(category) {{
           const res = await fetch("/review/{transaction_id}/resolve", {{
@@ -168,6 +176,8 @@ def review_page(transaction_id: int) -> str:
   button {{ padding: 16px; font-size: 16px; border: none; border-radius: 10px; background: #2a2a2a; color: #eee; }}
   button:active {{ background: #444; }}
   .done {{ text-align: center; font-size: 20px; margin-top: 40px; }}
+  .close-btn {{ margin-top: 20px; padding: 12px 28px; font-size: 15px; border: none; border-radius: 10px; background: #2a2a2a; color: #eee; }}
+  .close-btn:active {{ background: #444; }}
 </style>
 </head>
 <body>
