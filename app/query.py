@@ -43,6 +43,12 @@ query_spending 도구로 필요한 만큼 조회한 뒤(비교 질문이면 여�
   category와 merchant를 같이 채우지 않는다.
 - "지난달보다 늘었어?"처럼 비교/추세 질문은 query_spending을 필요한 기간만큼
   (예: this_month, last_month) 각각 호출해서 비교한다.
+- query_spending은 기간·카테고리별 합계만 계산한다. "무슨 요일에 제일 많이 갔어?",
+  "가장 비싼 결제가 뭐였어?"처럼 개별 거래를 들여다봐야 답할 수 있는 질문이면
+  list_transactions로 원본 거래 목록을 받아서 직접 확인한다. 계산으로 풀리는 질문은
+  항상 query_spending을 먼저 써라 — list_transactions는 그걸로 안 되는 경우에만 쓴다.
+- list_transactions 결과에는 각 거래의 요일(weekday)이 이미 계산되어 들어있다.
+  요일을 직접 계산하지 말고 그 값을 그대로 세거나 비교해라 — 날짜 계산은 틀리기 쉽다.
 - 답변은 한두 문장, 간결하게. 금액은 천 단위 콤마를 넣어 "12,345원"처럼 표기.
 - 조회해도 조건에 맞는 데이터가 없으면 억지로 추측하지 말고 그렇다고 답한다.
 """
@@ -77,8 +83,45 @@ TOOLS = [
                 "required": ["period"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_transactions",
+            "description": (
+                "기간(및 선택적으로 카테고리/가맹점) 조건에 맞는 개별 거래 원본을 나열한다. "
+                "query_spending의 집계로 답할 수 없는 질문(요일별 패턴, 특정 거래 조회, "
+                "최댓값/정렬 등)에만 쓴다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "enum": ["this_week", "last_week", "this_month", "last_month", "all"],
+                        "description": (
+                            "this_week=최근 7일, last_week=8~14일 전, this_month=이번 달, "
+                            "last_month=지난달, all=전체 기간"
+                        ),
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": list(CATEGORIES),
+                        "description": "특정 카테고리만 볼 때만 채운다.",
+                    },
+                    "merchant": {
+                        "type": "string",
+                        "description": "가맹점명이 질문에 명확히 나왔을 때만 채운다 (부분 일치 검색).",
+                    },
+                },
+                "required": ["period"],
+            },
+        },
+    },
 ]
+
+_WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
+MAX_LISTED_TRANSACTIONS = 200
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 
@@ -127,6 +170,56 @@ def query_spending(period: str, category: Optional[str] = None, merchant: Option
         "count": sum(r["count"] for r in rows),
         "by_category": rows,
     }
+
+
+def list_transactions(period: str, category: Optional[str] = None, merchant: Optional[str] = None) -> dict:
+    """list_transactions 도구의 실제 구현.
+
+    query_spending은 항상 SQL로 정확하게 집계하지만, 집계 축(카테고리·기간)에 없는
+    질문(요일별 패턴, 개별 거래 순위 등)은 애초에 답을 못 낸다. 그렇다고 원본을 LLM에게
+    던져주고 "요일 계산은 알아서 해라"라고 하면, LLM이 날짜 계산이나 카운팅을 틀릴 위험이
+    생긴다 — 그래서 요일(weekday)은 여기서 파이썬으로 미리 계산해 넣어준다. LLM은 그
+    필드를 세거나 비교하기만 하면 되고, 정확한 계산은 최대한 서버가 맡는다는 원칙은
+    유지된다.
+    """
+    if period not in _PERIOD_CLAUSES:
+        raise QueryError(f"알 수 없는 기간: {period}")
+    if category is not None and category not in CATEGORIES:
+        raise QueryError(f"알 수 없는 카테고리: {category}")
+
+    where = ["decision = 'confirm'", "category IS NOT NULL", _PERIOD_CLAUSES[period]]
+    params: list = []
+    if category:
+        where.append("category = %s")
+        params.append(category)
+    if merchant:
+        where.append("merchant ILIKE %s")
+        params.append(f"%{merchant}%")
+
+    sql = (
+        "SELECT merchant, amount, category, created_at FROM transactions "
+        f"WHERE {' AND '.join(where)} ORDER BY created_at DESC LIMIT %s"
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute(sql, params + [MAX_LISTED_TRANSACTIONS + 1])
+            rows = [dict(row) for row in cur.fetchall()]
+    except psycopg2.Error as exc:
+        raise QueryError(f"쿼리 실행에 실패했어요: {exc}") from exc
+
+    truncated = len(rows) > MAX_LISTED_TRANSACTIONS
+    rows = rows[:MAX_LISTED_TRANSACTIONS]
+    transactions = [
+        {
+            "merchant": r["merchant"],
+            "amount": r["amount"],
+            "category": r["category"],
+            "date": r["created_at"].strftime("%Y-%m-%d"),
+            "weekday": _WEEKDAY_KO[r["created_at"].weekday()],
+        }
+        for r in rows
+    ]
+    return {"transactions": transactions, "count": len(transactions), "truncated": truncated}
 
 
 # --- 0차 정확 매칭 (app/merchant_judgment.py의 merchant_category_map과 같은 패턴) ---
@@ -272,6 +365,9 @@ def _route_after_decide(state: QAState) -> str:
     return "end" if state.get("answer") is not None else "run_tools"
 
 
+_TOOL_IMPLS = {"query_spending": query_spending, "list_transactions": list_transactions}
+
+
 def _run_tools_node(state: QAState) -> dict:
     tool_messages = []
     trace = list(state["trace"])
@@ -281,13 +377,17 @@ def _run_tools_node(state: QAState) -> dict:
         except json.JSONDecodeError as exc:
             raise QueryError("도구 호출 형식이 잘못됐어요.") from exc
 
+        tool_name = call.function.name
         period, category, merchant = args.get("period"), args.get("category"), args.get("merchant")
         try:
-            result = query_spending(period=period, category=category, merchant=merchant)
+            impl = _TOOL_IMPLS[tool_name]
+            result = impl(period=period, category=category, merchant=merchant)
         except QueryError as exc:
             result = {"error": str(exc)}
 
-        trace.append({"period": period, "category": category, "merchant": merchant, "result": result})
+        trace.append(
+            {"tool": tool_name, "period": period, "category": category, "merchant": merchant, "result": result}
+        )
         tool_messages.append(
             {"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False, default=str)}
         )

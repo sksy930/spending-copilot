@@ -903,6 +903,10 @@ function formatTraceCall(index, call) {
   const label = parts.join(" · ");
   const r = call.result || {};
   if (r.error) return `${index}. ${label} → 오류: ${r.error}`;
+  if (call.tool === "list_transactions") {
+    const suffix = r.truncated ? `건 (일부만 표시)` : `건 조회`;
+    return `${index}. [원본 조회] ${label} → ${r.count ?? 0}${suffix}`;
+  }
   return `${index}. ${label} → ${(r.total ?? 0).toLocaleString()}원 (${r.count ?? 0}건)`;
 }
 
