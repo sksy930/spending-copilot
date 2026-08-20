@@ -15,6 +15,7 @@
 | 캡처 파이프라인 클라이언트 (Back Tap → 단축어 → OCR) | ✅ 동작 — 실제 아이폰에서 Back Tap → 단축어(최근 스크린샷 → Live Text OCR → `POST /webhook/capture`)로 실 결제 캡처 확인 (docs 3.1). 이 저장소엔 코드가 없음 — 아이폰 설정/단축어 앱 안의 설정이라 git으로 관리되지 않음 |
 | 실 웹 검색 도구 연동 | ✅ 동작 — Gemini Google Search grounding으로 가맹점 검색 (docs 3.5). 판단/QA/브리핑은 Groq(저지연 분류), 검색만 Gemini로 나눠 씀. 검색/판단 중 LLM 장애가 나면 거래를 잃지 않고 리뷰 큐(`llm_unavailable`)로 이관 |
 | 주간 브리핑 (`GET /briefing`) | ✅ 동작 — Slack 대신 웹 화면에서 최근 7일 집계 + LLM 요약을 즉시 보여준다 (스케줄러 없이 페이지 열 때마다 재계산, docs 3.4.2) |
+| escalate 사람 개입 알림 (`GET /review/{id}`) | ✅ 동작 — 가맹점 판단 루프가 `escalate`로 끝나면 ntfy 푸시 알림 발송 → 알림의 "확인하기"로 모바일 카테고리 선택 페이지 열림 → 선택 즉시 `transactions` 확정 + `merchant_category_map` 반영 (같은 가맹점 다음 거래부터 0차 매칭) ([app/notify.py](app/notify.py), [app/main.py](app/main.py) `/review/{id}`, docs 3.6) |
 
 ## 빠른 시작 (Docker)
 

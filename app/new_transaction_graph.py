@@ -11,6 +11,7 @@ from langgraph.graph import END, StateGraph
 
 from app import db
 from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judgment_loop
+from app.notify import notify_review_needed
 
 
 class NewTransactionState(TypedDict):
@@ -63,7 +64,7 @@ def _route_after_judge(state: NewTransactionState) -> str:
 
 
 def _persist_node(state: NewTransactionState) -> dict:
-    db.insert_transaction(
+    transaction_id = db.insert_transaction(
         merchant=state["merchant"],
         amount=state["amount"],
         category=state.get("category"),
@@ -73,6 +74,11 @@ def _persist_node(state: NewTransactionState) -> dict:
     )
     if state["decision"] == "confirm" and state.get("category"):
         db.upsert_merchant_category(state["merchant"], state["category"])
+    elif state["decision"] == "escalate":
+        try:
+            notify_review_needed(transaction_id, state["merchant"], state["amount"])
+        except Exception as exc:  # noqa: BLE001 — 알림 실패로 거래 저장 자체가 실패하면 안 됨
+            print(f"  [알림 발송 실패] {exc}")
     return {}
 
 

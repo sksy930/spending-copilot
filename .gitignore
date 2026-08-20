@@ -7,3 +7,5 @@ venv/
 *.db.bak.*
 chroma_db/
 data/*.csv
+.vscode/
+*.session.sql

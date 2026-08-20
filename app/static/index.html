@@ -123,6 +123,9 @@
     color: var(--escalate);
   }
   .msg-pending { opacity: 0.6; }
+  .msg-trace { margin-top: 8px; font-size: 0.78rem; color: var(--text-muted); }
+  .msg-trace summary { cursor: pointer; user-select: none; }
+  .trace-call { padding: 4px 0 0 2px; }
 
   #chat-form {
     display: flex;
@@ -740,11 +743,44 @@ function renderTransactionsPage() {
   }
 }
 
-function appendMessage(text, kind) {
+const PERIOD_LABELS = {
+  this_week: "이번 주", last_week: "지난주", this_month: "이번 달", last_month: "지난달", all: "전체 기간",
+};
+
+function formatTraceCall(index, call) {
+  const parts = [PERIOD_LABELS[call.period] ?? call.period];
+  if (call.category) parts.push(call.category);
+  if (call.merchant) parts.push(`"${call.merchant}"`);
+  const label = parts.join(" · ");
+  const r = call.result || {};
+  if (r.error) return `${index}. ${label} → 오류: ${r.error}`;
+  return `${index}. ${label} → ${(r.total ?? 0).toLocaleString()}원 (${r.count ?? 0}건)`;
+}
+
+function appendMessage(text, kind, trace) {
   const log = document.getElementById("chat-log");
   const div = document.createElement("div");
   div.className = `msg msg-${kind}`;
-  div.textContent = text;
+
+  const textEl = document.createElement("div");
+  textEl.textContent = text;
+  div.appendChild(textEl);
+
+  if (trace && trace.length > 0) {
+    const details = document.createElement("details");
+    details.className = "msg-trace";
+    const summary = document.createElement("summary");
+    summary.textContent = `🔍 ${trace.length}단계 조회`;
+    details.appendChild(summary);
+    trace.forEach((call, i) => {
+      const line = document.createElement("div");
+      line.className = "trace-call";
+      line.textContent = formatTraceCall(i + 1, call);
+      details.appendChild(line);
+    });
+    div.appendChild(details);
+  }
+
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
   return div;
@@ -775,7 +811,7 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
     if (!res.ok) {
       appendMessage(data.detail ?? "질문 처리에 실패했어요.", "error");
     } else {
-      appendMessage(data.answer, "assistant");
+      appendMessage(data.answer, "assistant", data.calls);
       loadTransactions();
     }
   } catch (err) {

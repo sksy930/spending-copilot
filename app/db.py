@@ -82,7 +82,7 @@ def insert_transaction(
     confidence: Optional[float],
     reason: str,
     created_at: Optional[str] = None,
-) -> None:
+) -> int:
     """created_at을 안 주면 NOW()로 찍힌다. 과거 내역 백필(seed 스크립트) 용도로만 지정한다."""
     init_db()
     with connect() as conn, conn.cursor() as cur:
@@ -90,9 +90,42 @@ def insert_transaction(
             """
             INSERT INTO transactions (merchant, amount, category, decision, confidence, reason, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()))
+            RETURNING id
             """,
             (merchant, amount, category, decision, confidence, reason, created_at),
         )
+        return cur.fetchone()["id"]
+
+
+def fetch_transaction(transaction_id: int) -> Optional[dict]:
+    init_db()
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM transactions WHERE id = %s", (transaction_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def resolve_transaction_category(transaction_id: int, category: str) -> Optional[str]:
+    """escalate 건에 사람이 카테고리를 직접 지정 (app/main.py GET/POST /review).
+
+    merchant_category_map도 같이 갱신해 같은 가맹점의 다음 거래는 0차 매칭으로 끝나게 한다.
+    """
+    init_db()
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE transactions
+            SET category = %s, decision = 'confirm', confidence = NULL, reason = '사람이 직접 지정'
+            WHERE id = %s
+            RETURNING merchant
+            """,
+            (category, transaction_id),
+        )
+        row = cur.fetchone()
+        merchant = row["merchant"] if row else None
+    if merchant:
+        upsert_merchant_category(merchant, category)
+    return merchant
 
 
 def fetch_transactions() -> list[dict]:

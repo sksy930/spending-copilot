@@ -16,7 +16,7 @@ from litellm.exceptions import RateLimitError
 
 from app.db import connect
 
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/openai/gpt-oss-20b")
 
 BRIEFING_SYSTEM_PROMPT = """너는 개인 소비 데이터를 바탕으로 주간 브리핑을 써주는 비서다.
 주어진 최근 7일 집계 데이터를 근거로 2~3문장, 자연스러운 한국어로 요약한다.

@@ -23,7 +23,7 @@ MAX_RETRIES = 2
 RATE_LIMIT_RETRY_ATTEMPTS = 3
 RATE_LIMIT_BACKOFF_SECONDS = 20
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini/gemini-flash-latest")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/llama-3.3-70b-versatile")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "groq/openai/gpt-oss-20b")
 
 CATEGORIES = ("음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품", "교육", "여가/오락", "의료", "미용", "교통", "여행", "기타")
 
