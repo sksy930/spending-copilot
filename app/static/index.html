@@ -457,6 +457,18 @@ function escapeHtml(value) {
   }[c]));
 }
 
+const KST_DATETIME_FMT = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+});
+
+function formatKstDateTime(isoString) {
+  // API가 UTC로 내려주므로(예: "2026-08-20T03:06:00Z") 문자열을 그대로 자르면 안 되고
+  // 반드시 시간대 변환을 거쳐야 한국 시각이 맞게 나온다.
+  const parts = KST_DATETIME_FMT.formatToParts(new Date(isoString));
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
 async function loadBriefing() {
   const content = document.getElementById("briefing-content");
   try {
@@ -760,11 +772,11 @@ function renderTransactionsPage() {
     const isConfirm = row.decision === "confirm";
     const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
     const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
-    const shortDate = row.created_at.slice(5, 10).replace("-", "/");
+    const dateTime = formatKstDateTime(row.created_at);
     div.innerHTML = `
       <div class="tx-row-top">
         <span class="${badgeClass}">${escapeHtml(badgeText)}</span>
-        <span class="tx-time num">${escapeHtml(shortDate)}</span>
+        <span class="tx-time num">${escapeHtml(dateTime)}</span>
       </div>
       <div class="tx-row-main">
         <span class="tx-merchant">${escapeHtml(row.merchant)}</span>
@@ -891,7 +903,7 @@ function renderPendingReviews(items) {
   for (const row of items) {
     const div = document.createElement("div");
     div.className = "review-item";
-    const shortDate = row.created_at.slice(5, 10).replace("-", "/");
+    const dateTime = formatKstDateTime(row.created_at);
 
     const info = document.createElement("div");
     const merchantSpan = document.createElement("span");
@@ -899,7 +911,7 @@ function renderPendingReviews(items) {
     merchantSpan.textContent = row.merchant;
     const metaSpan = document.createElement("span");
     metaSpan.className = "review-item-meta";
-    metaSpan.textContent = `${row.amount.toLocaleString()}원 · ${shortDate}`;
+    metaSpan.textContent = `${row.amount.toLocaleString()}원 · ${dateTime}`;
     info.appendChild(merchantSpan);
     info.appendChild(metaSpan);
     div.appendChild(info);
