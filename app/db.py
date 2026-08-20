@@ -105,6 +105,17 @@ def fetch_transaction(transaction_id: int) -> Optional[dict]:
         return dict(row) if row else None
 
 
+def fetch_pending_escalations() -> list[dict]:
+    """escalate로 남아 사람 확정을 기다리는 거래 목록 (app/main.py GET /review — PC 화면 알림 종 패널).
+
+    ntfy 알림을 놓쳤거나 폰이 아니어도 여기서 한 번에 몰아서 카테고리를 등록할 수 있게 한다.
+    """
+    init_db()
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM transactions WHERE decision = 'escalate' ORDER BY created_at DESC")
+        return [dict(row) for row in cur.fetchall()]
+
+
 def resolve_transaction_category(transaction_id: int, category: str) -> Optional[str]:
     """escalate 건에 사람이 카테고리를 직접 지정 (app/main.py GET/POST /review).
 

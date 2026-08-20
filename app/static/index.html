@@ -56,6 +56,34 @@
   header h1 { font-size: 2rem; letter-spacing: -0.03em; margin: 0 0 6px; font-weight: 800; }
   header p { color: var(--text-muted); margin: 0; font-size: 0.96rem; max-width: 520px; }
 
+  .bell-wrap { position: relative; }
+  .bell-btn {
+    position: relative; width: 40px; height: 40px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 0; font-size: 1.1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bell-badge {
+    position: absolute; top: -6px; right: -6px; background: var(--escalate); color: #fff;
+    font-size: 0.68rem; font-weight: 700; min-width: 17px; height: 17px; border-radius: 0;
+    display: flex; align-items: center; justify-content: center; padding: 0 3px;
+  }
+  .review-panel {
+    position: absolute; top: 48px; right: 0; width: 340px; max-height: 420px; overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    padding: 12px; z-index: 50; display: none;
+  }
+  .review-panel.open { display: block; }
+  .review-panel-title { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .review-panel-empty { color: var(--text-muted); font-size: 0.85rem; padding: 16px 4px; text-align: center; }
+  .review-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .review-item:last-child { border-bottom: none; }
+  .review-item-merchant { font-weight: 600; font-size: 0.88rem; }
+  .review-item-meta { color: var(--text-muted); font-size: 0.76rem; margin-left: 6px; }
+  .review-item-row { display: flex; gap: 6px; margin-top: 6px; }
+  .review-item-select { flex: 1; padding: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.82rem; }
+  .review-item-save { padding: 6px 10px; border: none; background: var(--accent); color: #fff; font-size: 0.82rem; cursor: pointer; }
+  .review-item-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
   .layout { display: grid; grid-template-columns: 1fr; gap: 24px; align-items: start; }
   @media (min-width: 980px) {
     .layout { grid-template-columns: minmax(0, 1fr) 420px; }
@@ -332,6 +360,15 @@
       <p class="kicker">Personal Finance Copilot</p>
       <h1>체크카드 소비 코파일럿</h1>
       <p>캡처된 결제가 자동으로 분류되고, 소비에 대해 자연어로 물어볼 수 있어요.</p>
+    </div>
+    <div class="bell-wrap">
+      <button id="review-bell" class="bell-btn" title="검토 필요한 거래">
+        🔔<span id="review-badge" class="bell-badge" style="display:none">0</span>
+      </button>
+      <div id="review-panel" class="review-panel">
+        <p class="review-panel-title">카테고리 확인 필요</p>
+        <div id="review-panel-body"></div>
+      </div>
     </div>
   </header>
 
@@ -826,10 +863,118 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
   }
 });
 
+const REVIEW_CATEGORIES = [
+  "음식점", "카페", "베이커리", "편의점", "쇼핑", "의류", "식료품",
+  "교육", "여가/오락", "의료", "미용", "교통", "여행", "기타",
+];
+
+function renderPendingReviews(items) {
+  const badge = document.getElementById("review-badge");
+  const body = document.getElementById("review-panel-body");
+
+  if (items.length === 0) {
+    badge.style.display = "none";
+  } else {
+    badge.textContent = String(items.length);
+    badge.style.display = "flex";
+  }
+
+  body.innerHTML = "";
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "review-panel-empty";
+    empty.textContent = "검토할 거래가 없어요.";
+    body.appendChild(empty);
+    return;
+  }
+
+  for (const row of items) {
+    const div = document.createElement("div");
+    div.className = "review-item";
+    const shortDate = row.created_at.slice(5, 10).replace("-", "/");
+
+    const info = document.createElement("div");
+    const merchantSpan = document.createElement("span");
+    merchantSpan.className = "review-item-merchant";
+    merchantSpan.textContent = row.merchant;
+    const metaSpan = document.createElement("span");
+    metaSpan.className = "review-item-meta";
+    metaSpan.textContent = `${row.amount.toLocaleString()}원 · ${shortDate}`;
+    info.appendChild(merchantSpan);
+    info.appendChild(metaSpan);
+    div.appendChild(info);
+
+    const rowDiv = document.createElement("div");
+    rowDiv.className = "review-item-row";
+
+    const select = document.createElement("select");
+    select.className = "review-item-select";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "카테고리 선택";
+    select.appendChild(placeholder);
+    for (const c of REVIEW_CATEGORIES) {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      select.appendChild(opt);
+    }
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "review-item-save";
+    saveBtn.textContent = "저장";
+    saveBtn.disabled = true;
+
+    select.addEventListener("change", () => {
+      saveBtn.disabled = !select.value;
+    });
+
+    saveBtn.addEventListener("click", async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "저장 중...";
+      try {
+        const res = await fetch(`/review/${row.id}/resolve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category: select.value }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        await loadPendingReviews();
+        loadTransactions();
+        loadDashboard();
+      } catch (err) {
+        alert("저장에 실패했어요.");
+        saveBtn.disabled = false;
+        saveBtn.textContent = "저장";
+      }
+    });
+
+    rowDiv.appendChild(select);
+    rowDiv.appendChild(saveBtn);
+    div.appendChild(rowDiv);
+    body.appendChild(div);
+  }
+}
+
+async function loadPendingReviews() {
+  const res = await fetch("/review");
+  renderPendingReviews(await res.json());
+}
+
+document.getElementById("review-bell").addEventListener("click", () => {
+  document.getElementById("review-panel").classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!document.querySelector(".bell-wrap").contains(e.target)) {
+    document.getElementById("review-panel").classList.remove("open");
+  }
+});
+
 document.getElementById("refresh").addEventListener("click", loadTransactions);
 loadTransactions();
 loadBriefing();
 loadDashboard();
+loadPendingReviews();
 let resizeTimer;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);

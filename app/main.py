@@ -108,6 +108,12 @@ def webhook_capture(
     return {"status": "accepted"}
 
 
+@app.get("/review")
+def pending_reviews() -> list[dict]:
+    """escalate로 남은 미확정 거래 목록 — 화면 우상단 알림 종 패널이 이걸 폴링한다."""
+    return db.fetch_pending_escalations()
+
+
 @app.get("/review/{transaction_id}", response_class=HTMLResponse)
 def review_page(transaction_id: int) -> str:
     """escalate 건 카테고리 선택 페이지 — ntfy 알림의 "확인하기" 액션이 여기로 연결된다."""
