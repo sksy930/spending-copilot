@@ -649,9 +649,13 @@ function renderHeatmap(daily) {
   }
 
   // 데이터 기간이 짧으면(예: 앱 초기 사용) 칸이 몇 개 안 돼서 카드 오른쪽이 휑해
-  // 보인다 — 실제 데이터 없이 빈 칸으로만 최소 폭을 채워서 카드 너비를 안정적으로 유지.
-  const MIN_WEEKS = 12;
-  for (; cellCount < MIN_WEEKS * 7; cellCount++) {
+  // 보인다 — 고정 주차 수를 추측해서 채우는 대신, 실제 렌더링된 카드 폭을 재서
+  // 그 폭을 딱 채울 만큼만 빈 칸(투명, 클릭 불가)으로 이어붙인다.
+  const CELL_PITCH = 17; // .heatmap-cell 14px + .heatmap-grid gap 3px
+  const scrollEl = document.querySelector(".heatmap-scroll");
+  const availableWidth = scrollEl ? scrollEl.clientWidth : 0;
+  const minColumns = availableWidth > 0 ? Math.ceil(availableWidth / CELL_PITCH) : 12;
+  for (; cellCount < minColumns * 7; cellCount++) {
     const pad = document.createElement("div");
     pad.className = "heatmap-cell level-empty";
     grid.appendChild(pad);
