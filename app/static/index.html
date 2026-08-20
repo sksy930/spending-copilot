@@ -21,11 +21,13 @@
     --escalate-soft: #fbe8dd;
     --shadow: 0 1px 2px rgba(20, 18, 12, 0.04), 0 12px 28px rgba(20, 18, 12, 0.06);
 
-    /* 카테고리별 색상 — 색상환에 13개를 균등 배치 + 색맹 시뮬레이션 검증(dataviz 스킬) */
-    --cat-food: #9e412e;        --cat-food-soft: #f7edeb;
-    --cat-cafe: #ae8032;        --cat-cafe-soft: #f7f3eb;
-    --cat-bakery: #949e2e;      --cat-bakery-soft: #f6f7eb;
-    --cat-grocery: #6aae32;     --cat-grocery-soft: #f0f7eb;
+    /* 카테고리별 색상 — 색상환에 13개를 균등 배치 + 색맹 시뮬레이션 검증(dataviz 스킬).
+       단, 음식점/카페/베이커리/식료품 4개는 "다 먹는 거"라 일부러 같은 주황 계열 톤으로
+       묶고 명도만 다르게 뒀다 — CVD 분리 체크는 이 4개끼리는 의도적으로 희생함. */
+    --cat-food: #913f27;        --cat-food-soft: #f7eeeb;
+    --cat-cafe: #9b5f31;        --cat-cafe-soft: #f7f0eb;
+    --cat-bakery: #b47e3c;      --cat-bakery-soft: #f7f2eb;
+    --cat-grocery: #be7550;     --cat-grocery-soft: #f7efeb;
     --cat-travel: #2e9e2f;      --cat-travel-soft: #ebf7eb;
     --cat-store: #32ae6d;       --cat-store-soft: #ebf7f1;
     --cat-beauty: #2e9e97;      --cat-beauty-soft: #ebf7f6;
@@ -50,10 +52,10 @@
       --escalate-soft: #3a2617;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.35);
 
-      --cat-food: #d05239;        --cat-food-soft: #3d1d17;
-      --cat-cafe: #ae7c29;        --cat-cafe-soft: #3d2f17;
-      --cat-bakery: #929d25;      --cat-bakery-soft: #3a3d17;
-      --cat-grocery: #518c21;     --cat-grocery-soft: #283d17;
+      --cat-food: #d46a49;        --cat-food-soft: #3d2017;
+      --cat-cafe: #d19261;        --cat-cafe-soft: #3d2817;
+      --cat-bakery: #d4aa77;      --cat-bakery-soft: #3d2c17;
+      --cat-grocery: #d7a68e;     --cat-grocery-soft: #3d2417;
       --cat-travel: #29ae2a;      --cat-travel-soft: #173d18;
       --cat-store: #29ae68;       --cat-store-soft: #173d29;
       --cat-beauty: #27a59d;      --cat-beauty-soft: #173d3b;
