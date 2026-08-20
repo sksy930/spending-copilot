@@ -350,15 +350,14 @@
   .heatmap-legend { display: flex; align-items: center; gap: 4px; margin-top: 12px; font-size: 9px; color: var(--text-muted); }
   .legend-cell { width: 10px; height: 10px; border-radius: 0; }
 
-  /* --- 일별 소비 상세 모달 --- */
+  /* --- 일별 소비 상세 팝오버 (클릭한 칸 옆에 붙어서 뜸) --- */
   .day-detail-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
-    z-index: 100; align-items: center; justify-content: center; padding: 20px;
+    display: none; position: fixed; inset: 0; background: transparent; z-index: 100;
   }
-  .day-detail-overlay.open { display: flex; }
+  .day-detail-overlay.open { display: block; }
   .day-detail-panel {
-    background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
-    width: 100%; max-width: 420px; max-height: 80vh; display: flex; flex-direction: column;
+    position: absolute; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+    width: 300px; max-width: calc(100vw - 24px); max-height: 70vh; display: flex; flex-direction: column;
   }
   .day-detail-header {
     display: flex; justify-content: space-between; align-items: flex-start;
@@ -647,6 +646,15 @@ function renderHeatmap(daily) {
       monthsRow.appendChild(label);
     }
     cellCount++;
+  }
+
+  // 데이터 기간이 짧으면(예: 앱 초기 사용) 칸이 몇 개 안 돼서 카드 오른쪽이 휑해
+  // 보인다 — 실제 데이터 없이 빈 칸으로만 최소 폭을 채워서 카드 너비를 안정적으로 유지.
+  const MIN_WEEKS = 12;
+  for (; cellCount < MIN_WEEKS * 7; cellCount++) {
+    const pad = document.createElement("div");
+    pad.className = "heatmap-cell level-empty";
+    grid.appendChild(pad);
   }
 }
 
@@ -1149,7 +1157,28 @@ const DAY_DETAIL_DATE_FMT = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "short",
 });
 
-function showDayDetail(dateStr) {
+function positionDayDetailPanel(anchorRect) {
+  const panel = document.querySelector(".day-detail-panel");
+  const margin = 8;
+  const panelWidth = panel.offsetWidth || 300;
+
+  let left = anchorRect.right + margin;
+  if (left + panelWidth > window.innerWidth - margin) {
+    left = anchorRect.left - panelWidth - margin; // 오른쪽에 자리 없으면 왼쪽에
+  }
+  left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+
+  let top = anchorRect.top;
+  const panelHeight = panel.offsetHeight || 200;
+  if (top + panelHeight > window.innerHeight - margin) {
+    top = Math.max(margin, window.innerHeight - panelHeight - margin);
+  }
+
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+}
+
+function showDayDetail(dateStr, anchorRect) {
   const rows = allTransactions.filter((row) => kstDateKey(row.created_at) === dateStr);
   rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -1189,6 +1218,7 @@ function showDayDetail(dateStr) {
   }
 
   document.getElementById("day-detail-overlay").classList.add("open");
+  positionDayDetailPanel(anchorRect);
 }
 
 function closeDayDetail() {
@@ -1198,14 +1228,14 @@ function closeDayDetail() {
 document.getElementById("heatmap-grid").addEventListener("click", (e) => {
   const cell = e.target.closest(".heatmap-cell");
   if (!cell || !cell.dataset.date) return;
-  showDayDetail(cell.dataset.date);
+  showDayDetail(cell.dataset.date, cell.getBoundingClientRect());
 });
 document.getElementById("heatmap-grid").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" && e.key !== " ") return;
   const cell = e.target.closest(".heatmap-cell");
   if (!cell || !cell.dataset.date) return;
   e.preventDefault();
-  showDayDetail(cell.dataset.date);
+  showDayDetail(cell.dataset.date, cell.getBoundingClientRect());
 });
 document.getElementById("day-detail-close").addEventListener("click", closeDayDetail);
 document.getElementById("day-detail-overlay").addEventListener("click", (e) => {
