@@ -46,13 +46,13 @@ Back Tap을 누른 순간) 하나로 전부 퉁치면 안 된다. 헤더의 날�
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 _AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*(결제|출금)")
 _MERCHANT_RE = re.compile(r"결제\s*\|\s*(.+?)\n?\s*잔액", re.S)
 _MERCHANT_RE_NOTIFICATION_CENTER = re.compile(r"체크카드\s*\|\s*(.+?)\s*잔액", re.S)
 _WITHDRAWAL_DEST_RE = re.compile(r"통장\s*(?:→|>+)\s*(.+?)(?:\n|$)")
-_TIME_RE = re.compile(r"(오전|오후)\s*(\d{1,2}):(\d{2})")
+_TIME_RE = re.compile(r"(어제\s*)?(오전|오후)\s*(\d{1,2}):(\d{2})")
 _DAY_OF_MONTH_RE = re.compile(r"(\d{1,2})일")
 
 
@@ -69,7 +69,7 @@ def _resolve_occurred_at(raw_text: str, block: str, header_end: int, captured_at
     if not time_match:
         return captured_at
 
-    ampm, hour_str, minute_str = time_match.groups()
+    yesterday_marker, ampm, hour_str, minute_str = time_match.groups()
     hour = int(hour_str) % 12
     if ampm == "오후":
         hour += 12
@@ -79,11 +79,17 @@ def _resolve_occurred_at(raw_text: str, block: str, header_end: int, captured_at
     day = int(day_match.group(1)) if day_match else captured_at.day
 
     try:
-        return captured_at.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
+        resolved = captured_at.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
     except ValueError:
         # 그 달에 없는 날짜(예: 헤더가 다음 달 1일인데 day=31로 잘못 읽힘) — 캡처 시각으로 폴백
         return captured_at
 
+    if yesterday_marker:
+        # 알림 센터를 자정 넘겨서 캡처하면 헤더 날짜는 오늘이지만, 그 전날 쌓인 건은
+        # 시각 앞에 "어제"가 붙어서 나온다 — 헤더 날짜 그대로 쓰면 하루 밀려서 기록된다.
+        resolved -= timedelta(days=1)
+
+    return resolved
 
 def parse_captures(raw_text: str, captured_at: datetime) -> list[ParsedCapture]:
     amount_matches = list(_AMOUNT_RE.finditer(raw_text))
