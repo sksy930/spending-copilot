@@ -757,7 +757,7 @@ function formatTraceCall(index, call) {
   return `${index}. ${label} → ${(r.total ?? 0).toLocaleString()}원 (${r.count ?? 0}건)`;
 }
 
-function appendMessage(text, kind, trace) {
+function appendMessage(text, kind, trace, usedLlm) {
   const log = document.getElementById("chat-log");
   const div = document.createElement("div");
   div.className = `msg msg-${kind}`;
@@ -770,7 +770,9 @@ function appendMessage(text, kind, trace) {
     const details = document.createElement("details");
     details.className = "msg-trace";
     const summary = document.createElement("summary");
-    summary.textContent = `🔍 ${trace.length}단계 조회`;
+    summary.textContent = usedLlm
+      ? `🔍 AI가 ${trace.length}단계 조회함`
+      : `⚡ 즉답 (AI 미사용, ${trace.length}건 조회)`;
     details.appendChild(summary);
     trace.forEach((call, i) => {
       const line = document.createElement("div");
@@ -811,7 +813,7 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
     if (!res.ok) {
       appendMessage(data.detail ?? "질문 처리에 실패했어요.", "error");
     } else {
-      appendMessage(data.answer, "assistant", data.calls);
+      appendMessage(data.answer, "assistant", data.calls, data.used_llm);
       loadTransactions();
     }
   } catch (err) {

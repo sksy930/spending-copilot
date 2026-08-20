@@ -133,6 +133,97 @@ def query_spending(period: str, category: Optional[str] = None, merchant: Option
     }
 
 
+# --- 0차 정확 매칭 (app/merchant_judgment.py의 merchant_category_map과 같은 패턴) ---
+#
+# "이번 주 카페 얼마 썼어?" 같은 질문은 기간 키워드 + 고정 카테고리 목록만 텍스트에서
+# 찾으면 파이썬만으로 풀린다. LLM은 여기서 못 잡히는(모호한 표현, 처음 보는 질문 유형)
+# 경우에만 부른다 — "확신 없을 때만 AI를 쓴다"는 3.4.1의 원칙을 QA에도 적용한 것.
+
+_PERIOD_LABELS = {"this_week": "이번 주", "last_week": "지난주", "this_month": "이번 달", "last_month": "지난달"}
+_PERIOD_KEYWORDS = [
+    (re.compile(r"이번\s*주"), "this_week"),
+    (re.compile(r"(지난|저번)\s*주"), "last_week"),
+    (re.compile(r"이번\s*달"), "this_month"),
+    (re.compile(r"(지난|저번)\s*달"), "last_month"),
+]
+_COMPARE_RE = re.compile(r"(늘었|줄었|비교|보다)")
+_TOP_CATEGORY_RE = re.compile(r"(제일|가장)\s*많이")
+_TOTAL_ASK_RE = re.compile(r"얼마")
+
+
+def _mentions_known_merchant(question: str) -> bool:
+    """가맹점명이 하나라도 언급됐으면 fast path를 안 탄다.
+
+    query_spending의 merchant 필터는 부분 일치라 애매함이 남는 데다, "세븐일레븐에서
+    얼마 썼어?"처럼 가맹점 필터를 완전히 무시하고 총액을 답해버리는 게(오답을 확신
+    있게 말하는 것) LLM 한 번 더 부르는 것보다 훨씬 나쁘다 — 조금이라도 확신이 안
+    서면 LLM에 맡긴다.
+
+    가맹점명의 "브랜드" 부분(공백 앞까지, 예: "세븐일레븐 수원성대본점" → "세븐일레븐")이
+    질문 원문에 그대로 등장하는지로 체크한다 — 질문 쪽을 토큰화해서 맞대보면 조사가
+    붙어("세븐일레븐에서") 어긋나거나, "카페" 같은 흔한 카테고리 단어가 우연히 다른
+    가맹점명("오픈톨드카페") 안에 들어있어 엉뚱하게 걸리는 문제가 있었다.
+    """
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT DISTINCT merchant FROM transactions")
+        merchants = [row["merchant"] for row in cur.fetchall() if row["merchant"]]
+    brands = {m.split()[0] for m in merchants if m and len(m.split()[0]) >= 2}
+    return any(brand in question for brand in brands)
+
+
+def _fast_path(question: str) -> Optional[dict]:
+    if _mentions_known_merchant(question):
+        return None
+
+    periods = [code for pattern, code in _PERIOD_KEYWORDS if pattern.search(question)]
+    categories = [c for c in CATEGORIES if c in question]
+    if len(categories) > 1:
+        return None  # 카테고리 두 개 이상 언급되면 애매하니 LLM에 맡김
+    category = categories[0] if categories else None
+
+    if len(periods) == 2 and not category and _COMPARE_RE.search(question):
+        p1, p2 = periods
+        r1, r2 = query_spending(period=p1), query_spending(period=p2)
+        diff = r1["total"] - r2["total"]
+        verb = "늘었어요" if diff > 0 else "줄었어요" if diff < 0 else "똑같아요"
+        answer = (
+            f"{_PERIOD_LABELS[p1]} 지출은 {r1['total']:,}원, {_PERIOD_LABELS[p2]} 지출은 "
+            f"{r2['total']:,}원으로 {abs(diff):,}원 {verb}."
+        )
+        trace = [
+            {"period": p1, "category": None, "merchant": None, "result": r1},
+            {"period": p2, "category": None, "merchant": None, "result": r2},
+        ]
+        return {"answer": answer, "calls": trace, "steps": 0, "used_llm": False}
+
+    if len(periods) == 1 and not _COMPARE_RE.search(question):
+        period = periods[0]
+        is_top = _TOP_CATEGORY_RE.search(question) and not category
+        if not is_top and not _TOTAL_ASK_RE.search(question):
+            return None  # "얼마"도 "가장 많이"도 없으면 우리가 모르는 질문 형태 — LLM에 맡김
+
+        result = query_spending(period=period, category=category)
+        trace = [{"period": period, "category": category, "merchant": None, "result": result}]
+
+        if is_top:
+            if not result["by_category"]:
+                answer = f"{_PERIOD_LABELS[period]}에는 지출 내역이 없어요."
+            else:
+                top = result["by_category"][0]
+                answer = f"{_PERIOD_LABELS[period]}에는 {top['category']}에 가장 많이 썼어요 ({top['total']:,}원, {top['count']}건)."
+        elif category:
+            if result["total"] == 0:
+                answer = f"{_PERIOD_LABELS[period]}에는 {category} 지출이 없어요."
+            else:
+                answer = f"{_PERIOD_LABELS[period]} {category} 지출은 총 {result['total']:,}원이에요 ({result['count']}건)."
+        else:
+            answer = f"{_PERIOD_LABELS[period]} 총 지출은 {result['total']:,}원이에요 ({result['count']}건)."
+
+        return {"answer": answer, "calls": trace, "steps": 0, "used_llm": False}
+
+    return None
+
+
 def _call_query_agent(messages: list[dict]):
     """Groq 무료 티어의 요청 제한(429)에 걸리면 잠깐 대기 후 재시도한다."""
     for attempt in range(1, RATE_LIMIT_RETRY_ATTEMPTS + 1):
@@ -234,6 +325,10 @@ def answer_question(question: str) -> dict:
     decide 노드가 매 스텝 "지금 답할 수 있는가, query_spending을 더 불러야 하는가"를
     스스로 결정하고, 도구 호출이면 run_tools로 넘어갔다가 다시 decide로 돌아가는 루프다.
     """
+    fast = _fast_path(question)
+    if fast is not None:
+        return fast
+
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     initial_state: QAState = {
         "messages": [
@@ -250,4 +345,5 @@ def answer_question(question: str) -> dict:
         "answer": final_state["answer"],
         "calls": final_state["trace"],
         "steps": final_state["step"],
+        "used_llm": True,
     }
