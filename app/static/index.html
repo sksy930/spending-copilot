@@ -249,6 +249,12 @@
     font-weight: 600;
   }
   .badge-escalate { background: var(--escalate-soft); color: var(--escalate); }
+  .badge-editable { cursor: pointer; }
+  .badge-editable:hover { opacity: 0.75; }
+  .badge-edit-select {
+    font-size: 0.72rem; font-weight: 600; padding: 3px 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text);
+  }
   #empty { color: var(--text-muted); font-size: 0.9rem; padding: 24px 4px; text-align: center; }
 
   .pagination { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
@@ -672,7 +678,6 @@ function renderCategoryChart(byCategory) {
     const fill = document.createElement("div");
     fill.className = "cat-fill";
     fill.style.width = `${Math.max((c.total / max) * 100, 3)}%`;
-    fill.style.background = categoryColorVar(c.category);
     track.appendChild(fill);
 
     const value = document.createElement("div");
@@ -800,13 +805,13 @@ function renderTransactionsPage() {
     const div = document.createElement("div");
     div.className = "tx-row";
     const isConfirm = row.decision === "confirm";
-    const badgeClass = isConfirm ? "badge" : "badge badge-escalate";
+    const badgeClass = isConfirm ? "badge badge-editable" : "badge badge-escalate badge-editable";
     const badgeText = isConfirm ? (row.category ?? "확정") : "리뷰 필요";
     const badgeStyle = categoryBadgeStyle(isConfirm ? row.category : null);
     const dateTime = formatKstDateTime(row.created_at);
     div.innerHTML = `
       <div class="tx-row-top">
-        <span class="${badgeClass}"${badgeStyle}>${escapeHtml(badgeText)}</span>
+        <span class="${badgeClass}"${badgeStyle} data-tx-id="${row.id}" data-tx-category="${escapeHtml(row.category ?? "")}" title="눌러서 카테고리 수정">${escapeHtml(badgeText)}</span>
         <span class="tx-time num">${escapeHtml(dateTime)}</span>
       </div>
       <div class="tx-row-main">
@@ -1031,6 +1036,54 @@ document.addEventListener("click", (e) => {
   if (!document.querySelector(".bell-wrap").contains(e.target)) {
     document.getElementById("review-panel").classList.remove("open");
   }
+});
+
+document.getElementById("tx-list").addEventListener("click", (e) => {
+  const badge = e.target.closest(".badge-editable");
+  if (!badge) return;
+
+  const txId = badge.dataset.txId;
+  const currentCategory = badge.dataset.txCategory;
+
+  const select = document.createElement("select");
+  select.className = "badge-edit-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "카테고리 선택";
+  placeholder.disabled = true;
+  placeholder.selected = !currentCategory;
+  select.appendChild(placeholder);
+  for (const c of REVIEW_CATEGORIES) {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    if (c === currentCategory) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  select.addEventListener("change", async () => {
+    select.disabled = true;
+    try {
+      const res = await fetch(`/review/${txId}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: select.value }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      loadTransactions();
+      loadDashboard();
+      loadPendingReviews();
+    } catch (err) {
+      alert("저장에 실패했어요.");
+      loadTransactions();
+    }
+  });
+  select.addEventListener("blur", () => {
+    if (!select.disabled) loadTransactions(); // 선택 안 하고 포커스만 벗어나면 원상복구
+  });
+
+  badge.replaceWith(select);
+  select.focus();
 });
 
 document.getElementById("refresh").addEventListener("click", loadTransactions);

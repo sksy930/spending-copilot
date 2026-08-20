@@ -136,26 +136,23 @@ def review_page(transaction_id: int) -> str:
     merchant = html.escape(transaction["merchant"])
     amount = f"{transaction['amount']:,}"
 
-    if transaction["decision"] == "confirm":
-        category = html.escape(transaction["category"] or "")
-        body = f"""
-        <div class="done">
-          <p>이미 "{category}"(으)로 처리됐어요.</p>
-          <button class="close-btn" onclick="window.close()">닫기</button>
-        </div>
-        """
-    else:
-        buttons = "\n".join(
-            f'<button onclick="pick(\'{html.escape(c)}\')">{html.escape(c)}</button>' for c in CATEGORIES
-        )
-        body = f"""
-        <div class="cats" id="cats">{buttons}</div>
-        <div class="done" id="done" style="display:none">
-          <p>저장됐어요 ✓</p>
-          <button class="close-btn" onclick="window.close()">닫기</button>
-        </div>
-        <script>
-        async function pick(category) {{
+    current_note = ""
+    if transaction["decision"] == "confirm" and transaction["category"]:
+        current = html.escape(transaction["category"])
+        current_note = f'<p class="current-note">현재: "{current}" — 다시 고르면 바뀌어요.</p>'
+
+    buttons = "\n".join(
+        f'<button onclick="pick(\'{html.escape(c)}\')">{html.escape(c)}</button>' for c in CATEGORIES
+    )
+    body = f"""
+    {current_note}
+    <div class="cats" id="cats">{buttons}</div>
+    <div class="done" id="done" style="display:none">
+      <p>저장됐어요 ✓</p>
+      <button class="close-btn" onclick="window.close()">닫기</button>
+    </div>
+    <script>
+    async function pick(category) {{
           const res = await fetch("/review/{transaction_id}/resolve", {{
             method: "POST",
             headers: {{"Content-Type": "application/json"}},
@@ -181,6 +178,7 @@ def review_page(transaction_id: int) -> str:
   body {{ font-family: -apple-system, sans-serif; margin: 0; padding: 24px; background: #111; color: #eee; }}
   h1 {{ font-size: 18px; margin-bottom: 4px; }}
   .txn {{ color: #8ecbff; margin-bottom: 20px; }}
+  .current-note {{ color: #999; font-size: 13px; margin-bottom: 12px; }}
   .cats {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
   button {{ padding: 16px; font-size: 16px; border: none; border-radius: 10px; background: #2a2a2a; color: #eee; }}
   button:active {{ background: #444; }}
