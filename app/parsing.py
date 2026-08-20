@@ -44,7 +44,7 @@ from dataclasses import dataclass
 _AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*(결제|출금)")
 _MERCHANT_RE = re.compile(r"결제\s*\|\s*(.+?)\n?\s*잔액", re.S)
 _MERCHANT_RE_NOTIFICATION_CENTER = re.compile(r"체크카드\s*\|\s*(.+?)\s*잔액", re.S)
-_WITHDRAWAL_DEST_RE = re.compile(r"통장\s*→\s*(.+?)(?:\n|$)")
+_WITHDRAWAL_DEST_RE = re.compile(r"통장\s*(?:→|>+)\s*(.+?)(?:\n|$)")
 
 
 @dataclass
@@ -86,6 +86,12 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
         results.append(ParsedCapture(merchant=merchant, amount=amount))
 
     return results
+
+
+def count_payment_blocks(raw_text: str) -> int:
+    """"N원 결제/출금" 패턴이 몇 개 있는지 — parse_captures가 그중 일부만 못 잡았을 때
+    (원문은 남기고 나머지는 정상 처리하는) 부분 실패를 감지하는 용도 (app/main.py)."""
+    return len(list(_AMOUNT_RE.finditer(raw_text)))
 
 
 def raw_text_hash(raw_text: str) -> str:

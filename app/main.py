@@ -20,7 +20,7 @@ from app import db
 from app.briefing import generate_weekly_briefing
 from app.merchant_judgment import CATEGORIES
 from app.new_transaction_graph import process_new_transaction
-from app.parsing import parse_captures, raw_text_hash
+from app.parsing import count_payment_blocks, parse_captures, raw_text_hash
 from app.query import QueryError, answer_question
 from app.stats import fetch_spending_overview
 
@@ -103,6 +103,11 @@ def webhook_capture(
     if not parsed_list:
         db.insert_review(reason="ocr_parse_fail", raw_text=payload.raw_text)
         return {"status": "parse_failed"}
+
+    if count_payment_blocks(payload.raw_text) > len(parsed_list):
+        # 결제/출금 블록이 여러 개인데 그중 일부만 파싱됨 — 나머지는 유실 없이 원문 그대로
+        # 리뷰 큐에 남긴다. 파싱 성공한 건은 그대로 처리한다.
+        db.insert_review(reason="partial_parse_fail", raw_text=payload.raw_text)
 
     for parsed in parsed_list:
         background_tasks.add_task(

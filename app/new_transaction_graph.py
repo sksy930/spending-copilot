@@ -26,6 +26,11 @@ class NewTransactionState(TypedDict):
 
 
 def _zero_shot_match_node(state: NewTransactionState) -> dict:
+    if state.get("force_escalate"):
+        # 계좌 출금(네이버페이 충전 등)은 가맹점명이 실제 업종을 나타내지 않는다 —
+        # "네이버페이충전"은 이번엔 음식점에, 다음엔 쇼핑에 쓸 수도 있다. 그래서 0차
+        # 매칭(같은 이름 = 같은 업종이라는 캐시 전제)을 아예 안 거치고 매번 escalate한다.
+        return {}
     category = db.lookup_category(state["merchant"])
     if category is None:
         return {}
