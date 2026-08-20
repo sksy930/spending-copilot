@@ -19,12 +19,17 @@
 가맹점명이 화면 폭 때문에 줄바꿈되어도(배너 예시의 "이디야커피\n(대구수성알파시티점)")
 그 줄바꿈만 제거해 하나의 가맹점명으로 합친다. 날짜는 원문에 없으므로 파싱 대상이
 아니다 — 웹훅 payload의 captured_at을 그대로 쓴다 (3.2 참고).
+
+한 스크린샷에 결제 알림이 여러 건 쌓여있는 경우(예: 알림 센터를 며칠치 밀렸다가
+한 번에 캡처)도 처리한다 — 금액 패턴("N원 결제")이 나온 위치마다 결제 한 건의
+시작으로 보고, 다음 금액이 나오기 전까지를 그 건의 블록으로 잘라 그 안에서만
+가맹점명을 찾는다. 이렇게 블록을 나누지 않으면 정규식이 텍스트 전체에서 처음
+매칭되는 것 하나만 찾아서, 두 번째 이후 결제가 조용히 유실된다.
 """
 
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 _AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*결제")
 _MERCHANT_RE = re.compile(r"결제\s*\|\s*(.+?)\n?\s*잔액", re.S)
@@ -37,18 +42,27 @@ class ParsedCapture:
     amount: int
 
 
-def parse_capture(raw_text: str) -> Optional[ParsedCapture]:
-    amount_match = _AMOUNT_RE.search(raw_text)
-    merchant_match = _MERCHANT_RE.search(raw_text) or _MERCHANT_RE_NOTIFICATION_CENTER.search(raw_text)
-    if not amount_match or not merchant_match:
-        return None
+def parse_captures(raw_text: str) -> list[ParsedCapture]:
+    amount_matches = list(_AMOUNT_RE.finditer(raw_text))
+    results: list[ParsedCapture] = []
 
-    amount = int(amount_match.group(1).replace(",", ""))
-    merchant = merchant_match.group(1).replace("\n", "").strip()
-    if not merchant:
-        return None
+    for i, amount_match in enumerate(amount_matches):
+        block_start = amount_match.start()
+        block_end = amount_matches[i + 1].start() if i + 1 < len(amount_matches) else len(raw_text)
+        block = raw_text[block_start:block_end]
 
-    return ParsedCapture(merchant=merchant, amount=amount)
+        merchant_match = _MERCHANT_RE.search(block) or _MERCHANT_RE_NOTIFICATION_CENTER.search(block)
+        if not merchant_match:
+            continue
+
+        merchant = merchant_match.group(1).replace("\n", "").strip()
+        if not merchant:
+            continue
+
+        amount = int(amount_match.group(1).replace(",", ""))
+        results.append(ParsedCapture(merchant=merchant, amount=amount))
+
+    return results
 
 
 def raw_text_hash(raw_text: str) -> str:

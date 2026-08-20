@@ -20,7 +20,7 @@ from app import db
 from app.briefing import generate_weekly_briefing
 from app.merchant_judgment import CATEGORIES
 from app.new_transaction_graph import process_new_transaction
-from app.parsing import parse_capture, raw_text_hash
+from app.parsing import parse_captures, raw_text_hash
 from app.query import QueryError, answer_question
 from app.stats import fetch_spending_overview
 
@@ -99,13 +99,14 @@ def webhook_capture(
         db.insert_review(reason="stale_capture", raw_text=payload.raw_text)
         return {"status": "stale"}
 
-    parsed = parse_capture(payload.raw_text)
-    if parsed is None:
+    parsed_list = parse_captures(payload.raw_text)
+    if not parsed_list:
         db.insert_review(reason="ocr_parse_fail", raw_text=payload.raw_text)
         return {"status": "parse_failed"}
 
-    background_tasks.add_task(process_new_transaction, parsed.merchant, parsed.amount)
-    return {"status": "accepted"}
+    for parsed in parsed_list:
+        background_tasks.add_task(process_new_transaction, parsed.merchant, parsed.amount)
+    return {"status": "accepted", "count": len(parsed_list)}
 
 
 @app.get("/review")
