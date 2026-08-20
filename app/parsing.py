@@ -17,8 +17,14 @@
     토스뱅크 체크카드 | KFC 수원성균관대점 잔액 159,253원 (토스뱅크 알림)
 
 가맹점명이 화면 폭 때문에 줄바꿈되어도(배너 예시의 "이디야커피\n(대구수성알파시티점)")
-그 줄바꿈만 제거해 하나의 가맹점명으로 합친다. 날짜는 원문에 없으므로 파싱 대상이
-아니다 — 웹훅 payload의 captured_at을 그대로 쓴다 (3.2 참고).
+그 줄바꿈만 제거해 하나의 가맹점명으로 합친다.
+
+알림 센터 캡처는 결제 블록마다 시각("오후 12:06")이 붙어있고, 화면 맨 위 잠금화면
+헤더에 날짜("20일")가 있다 — 한 스크린샷에 여러 결제가 쌓여있으면 그 시각이 서로
+다르므로(예: 12:06, 12:04, 11:49), 캡처 시각(webhook payload의 captured_at, 즉
+Back Tap을 누른 순간) 하나로 전부 퉁치면 안 된다. 헤더의 날짜 + 블록별 시각을
+조합해 결제 건마다 실제 결제 시각을 복원한다. 시각을 못 찾으면(배너 형식은 애초에
+시각이 안 찍힘) captured_at으로 폴백한다.
 
 한 스크린샷에 결제 알림이 여러 건 쌓여있는 경우(예: 알림 센터를 며칠치 밀렸다가
 한 번에 캡처)도 처리한다 — 금액 패턴("N원 결제")이 나온 위치마다 결제 한 건의
@@ -40,23 +46,49 @@
 import hashlib
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 _AMOUNT_RE = re.compile(r"([\d,]+)\s*원\s*(결제|출금)")
 _MERCHANT_RE = re.compile(r"결제\s*\|\s*(.+?)\n?\s*잔액", re.S)
 _MERCHANT_RE_NOTIFICATION_CENTER = re.compile(r"체크카드\s*\|\s*(.+?)\s*잔액", re.S)
 _WITHDRAWAL_DEST_RE = re.compile(r"통장\s*(?:→|>+)\s*(.+?)(?:\n|$)")
+_TIME_RE = re.compile(r"(오전|오후)\s*(\d{1,2}):(\d{2})")
+_DAY_OF_MONTH_RE = re.compile(r"(\d{1,2})일")
 
 
 @dataclass
 class ParsedCapture:
     merchant: str
     amount: int
+    occurred_at: datetime
     force_escalate: bool = False
 
 
-def parse_captures(raw_text: str) -> list[ParsedCapture]:
+def _resolve_occurred_at(raw_text: str, block: str, header_end: int, captured_at: datetime) -> datetime:
+    time_match = _TIME_RE.search(block)
+    if not time_match:
+        return captured_at
+
+    ampm, hour_str, minute_str = time_match.groups()
+    hour = int(hour_str) % 12
+    if ampm == "오후":
+        hour += 12
+    minute = int(minute_str)
+
+    day_match = _DAY_OF_MONTH_RE.search(raw_text[:header_end])
+    day = int(day_match.group(1)) if day_match else captured_at.day
+
+    try:
+        return captured_at.replace(day=day, hour=hour, minute=minute, second=0, microsecond=0)
+    except ValueError:
+        # 그 달에 없는 날짜(예: 헤더가 다음 달 1일인데 day=31로 잘못 읽힘) — 캡처 시각으로 폴백
+        return captured_at
+
+
+def parse_captures(raw_text: str, captured_at: datetime) -> list[ParsedCapture]:
     amount_matches = list(_AMOUNT_RE.finditer(raw_text))
     results: list[ParsedCapture] = []
+    header_end = amount_matches[0].start() if amount_matches else 0
 
     for i, amount_match in enumerate(amount_matches):
         block_start = amount_match.start()
@@ -64,6 +96,7 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
         block = raw_text[block_start:block_end]
         amount = int(amount_match.group(1).replace(",", ""))
         kind = amount_match.group(2)
+        occurred_at = _resolve_occurred_at(raw_text, block, header_end, captured_at)
 
         if kind == "출금":
             dest_match = _WITHDRAWAL_DEST_RE.search(block)
@@ -72,7 +105,9 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
             destination = dest_match.group(1).strip()
             if not destination:
                 continue
-            results.append(ParsedCapture(merchant=destination, amount=amount, force_escalate=True))
+            results.append(
+                ParsedCapture(merchant=destination, amount=amount, occurred_at=occurred_at, force_escalate=True)
+            )
             continue
 
         merchant_match = _MERCHANT_RE.search(block) or _MERCHANT_RE_NOTIFICATION_CENTER.search(block)
@@ -83,7 +118,7 @@ def parse_captures(raw_text: str) -> list[ParsedCapture]:
         if not merchant:
             continue
 
-        results.append(ParsedCapture(merchant=merchant, amount=amount))
+        results.append(ParsedCapture(merchant=merchant, amount=amount, occurred_at=occurred_at))
 
     return results
 

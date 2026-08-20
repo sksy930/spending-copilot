@@ -99,7 +99,7 @@ def webhook_capture(
         db.insert_review(reason="stale_capture", raw_text=payload.raw_text)
         return {"status": "stale"}
 
-    parsed_list = parse_captures(payload.raw_text)
+    parsed_list = parse_captures(payload.raw_text, captured_at)
     if not parsed_list:
         db.insert_review(reason="ocr_parse_fail", raw_text=payload.raw_text)
         return {"status": "parse_failed"}
@@ -111,7 +111,11 @@ def webhook_capture(
 
     for parsed in parsed_list:
         background_tasks.add_task(
-            process_new_transaction, parsed.merchant, parsed.amount, parsed.force_escalate
+            process_new_transaction,
+            parsed.merchant,
+            parsed.amount,
+            parsed.force_escalate,
+            parsed.occurred_at,
         )
     return {"status": "accepted", "count": len(parsed_list)}
 

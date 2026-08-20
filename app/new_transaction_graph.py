@@ -5,6 +5,7 @@
 거래를 잃지 않고 리뷰 큐로 이관한다.
 """
 
+from datetime import datetime
 from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -17,6 +18,7 @@ from app.notify import notify_review_needed
 class NewTransactionState(TypedDict):
     merchant: str
     amount: int
+    occurred_at: Optional[datetime]
     category: Optional[str]
     decision: Optional[str]
     confidence: Optional[float]
@@ -85,6 +87,7 @@ def _route_after_judge(state: NewTransactionState) -> str:
 
 
 def _persist_node(state: NewTransactionState) -> dict:
+    occurred_at = state.get("occurred_at")
     transaction_id = db.insert_transaction(
         merchant=state["merchant"],
         amount=state["amount"],
@@ -92,6 +95,7 @@ def _persist_node(state: NewTransactionState) -> dict:
         decision=state["decision"],
         confidence=state.get("confidence"),
         reason=state.get("reason", ""),
+        created_at=occurred_at.isoformat() if occurred_at else None,
     )
     if state["decision"] == "confirm" and state.get("category"):
         db.upsert_merchant_category(state["merchant"], state["category"])
@@ -133,13 +137,23 @@ def _build_new_transaction_graph():
 _new_transaction_graph = _build_new_transaction_graph()
 
 
-def process_new_transaction(merchant: str, amount: int, force_escalate: bool = False) -> None:
+def process_new_transaction(
+    merchant: str,
+    amount: int,
+    force_escalate: bool = False,
+    occurred_at: Optional[datetime] = None,
+) -> None:
     """0차 정확 매칭 → 가맹점 판단 에이전트 루프, 또는 가맹점 정보가 아예 없으면
-    (계좌 출금 등) 판단 루프 없이 곧장 escalate (3.4.1)."""
+    (계좌 출금 등) 판단 루프 없이 곧장 escalate (3.4.1).
+
+    occurred_at은 실제 결제/출금 시각(app/parsing.py가 원문에서 복원) — 안 주면
+    db.insert_transaction이 NOW()로 찍는다.
+    """
     _new_transaction_graph.invoke(
         {
             "merchant": merchant,
             "amount": amount,
+            "occurred_at": occurred_at,
             "category": None,
             "decision": None,
             "confidence": None,
