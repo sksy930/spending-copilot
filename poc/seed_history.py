@@ -12,8 +12,10 @@ CSV 형식 (헤더 포함, date/merchant/amount 세 컬럼):
 """
 
 import csv
+import random
 import sys
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -22,6 +24,31 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import db  # noqa: E402
 from app.merchant_judgment import RealSearchTool, Transaction, run_merchant_judgment_loop  # noqa: E402
+
+# CSV엔 날짜만 있고 시각이 없다. 전부 정오로 고정하면 부자연스러우니(주간 지출 패턴 등
+# 데모용 차트에서 티가 남) 카테고리별로 그럴듯한 시간대에서 무작위로 고른다.
+_CATEGORY_HOUR_RANGES: dict[str, list[tuple[int, int]]] = {
+    "카페": [(7, 11), (14, 17)],
+    "베이커리": [(7, 10), (15, 18)],
+    "음식점": [(11, 14), (17, 20)],
+    "편의점": [(8, 23)],
+    "쇼핑": [(12, 20)],
+    "의류": [(12, 19)],
+    "식료품": [(10, 20)],
+    "교육": [(9, 18)],
+    "여가/오락": [(13, 22)],
+    "의료": [(9, 17)],
+    "미용": [(10, 19)],
+    "교통": [(7, 9), (17, 20)],
+    "여행": [(6, 22)],
+    "기타": [(9, 21)],
+}
+
+
+def _random_time(category: Optional[str]) -> str:
+    start, end = random.choice(_CATEGORY_HOUR_RANGES.get(category, [(9, 21)]))
+    hour = random.randint(start, end - 1) if end > start else start
+    return f"{hour:02d}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
 
 
 def seed(csv_path: str) -> None:
@@ -37,11 +64,11 @@ def seed(csv_path: str) -> None:
             if not merchant:
                 continue
             total += 1
-            created_at = f"{date} 12:00:00+09:00"  # 시각 정보가 없어 정오(KST)로 고정
 
             category = db.lookup_category(merchant)
             if category is not None:
                 zero_tier_hits += 1
+                created_at = f"{date} {_random_time(category)}+09:00"
                 db.insert_transaction(
                     merchant=merchant,
                     amount=amount,
@@ -65,6 +92,7 @@ def seed(csv_path: str) -> None:
                 print(f"[{date}][llm_unavailable] {merchant} / {amount}원 -> {exc}")
                 continue
 
+            created_at = f"{date} {_random_time(result.category)}+09:00"
             db.insert_transaction(
                 merchant=merchant,
                 amount=amount,
